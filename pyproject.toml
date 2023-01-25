@@ -9,13 +9,13 @@ dev = [
 
 [project]
 name = "clevertouch"
-version = "0.1.4"
+version = "0.1.5"
 description = "API for interacting with Touch E3 smart device controllers via CleverTouch cloud accounts"
 authors = [
     {name = "hemphen", email = "michael.hemph@gmail.com"},
 ]
 dependencies = [
-    "aiohttp~=3.8.3",
+    "aiohttp>=3.8.1",
 ]
 requires-python = ">=3.8"
 readme = "README.md"
