@@ -24,7 +24,7 @@ class ApiResult(NamedTuple):
 class ApiException(AppException):
     def __init__(self, status: ApiStatus, *args):
         super().__init__(*args)
-        self.status: ApiStatus
+        self.status: ApiStatus = status
 
 
 class ApiAuthException(ApiException):
@@ -39,11 +39,17 @@ class ApiSession:
     def __init__(
         self, email: Optional[str] = None, token: Optional[str] = None
     ) -> None:
-        self._http_session = ClientSession(self.API_BASE)
+        self._http_session: ClientSession = ClientSession(self.API_BASE)
         self.email: Optional[str] = email
         self.token: Optional[str] = token
         self.user: Optional[UserInfo] = None
         self.homes: dict[str, SmartHome] = {}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *excinfo):
+        await self._http_session.close()
 
     async def authenticate(
         self,
@@ -51,10 +57,12 @@ class ApiSession:
         password: Optional[str] = None,
         password_hash: Optional[str] = None,
     ):
-        if password_hash in [None, ""]:
-            if password in [None, ""]:
+        self.email = email
+        if password_hash is None or password_hash == '':
+            if password is None:
                 raise AppException("No password provided")
-            password_hash = md5(password.encode()).hexdigest().encode().decode()
+            password_hash = md5(
+                password.encode()).hexdigest().encode().decode()
 
         endpoint = "human/user/auth/"
         payload = {
@@ -64,14 +72,22 @@ class ApiSession:
             "lang": self.API_LANG,
         }
 
+        print(password_hash)
         try:
             result = await self._api_post(endpoint, payload)
         except ApiException as ex:
             if ex.status.key == "ERR_PARAM":
-                raise ApiAuthException(ex.status, "Invalid email or password") from ex
+                raise ApiAuthException(
+                    ex.status, "Invalid email or password") from ex
             raise ApiAuthException(
                 ex.status, f"{ex.status.key}: {ex.status.value}"
             ) from ex
+
+        if result.status.code != 1:
+            raise ApiException(
+                result.status,
+                f"API read failed with status {result.status.key} ({result.status.code}): {result.status.value}",
+            )
 
         self.email = result.data["user_infos"]["email"]
         self.token = result.data["token"]
@@ -79,6 +95,8 @@ class ApiSession:
     async def get_user(self) -> UserInfo:
         user = self.user
         if user is None:
+            if self.email is None:
+                raise AppException("no email specified")
             user = UserInfo(self, self.email)
             await user.refresh()
         return user
@@ -100,9 +118,7 @@ class ApiSession:
         result = await self._api_post(endpoint, payload)
         if result.status.code != 1:
             raise ApiException(
-                result.status.code,
-                result.status.key,
-                result.status.value,
+                result.status,
                 f"API read failed with status {result.status.key} ({result.status.code}): {result.status.value}",
             )
         return result
@@ -117,9 +133,7 @@ class ApiSession:
         result = await self._api_post(endpoint, payload)
         if result.status.code != 8:
             raise ApiException(
-                result.status.code,
-                result.status.key,
-                result.status.value,
+                result.status,
                 f"API write failed with status {result.status.key} ({result.status.code}): {result. status.value}",
             )
         return result
@@ -130,7 +144,8 @@ class ApiSession:
             data = json["data"]
             parameters = json["parameters"]
         except Exception as ex:
-            raise AppException("Unexpected JSON format in API response") from ex
+            raise AppException(
+                "Unexpected JSON format in API response") from ex
 
         try:
             code_num = int(code["code"])
@@ -164,20 +179,20 @@ class SmartHome:
         self.home_id = data["smarthome_id"]
         self.label = data["label"]
 
-        self.zones |= {
+        self.zones.update({
             zone.id_local: zone
             for zone in [
                 self.zones.get(zone_data["num_zone"], ZoneInfo(zone_data))
                 for zone_data in data["zones"].values()
             ]
-        }
-        self.devices |= {
+        })
+        self.devices.update({
             device.device_id: device
             for device in [
                 self._update_or_create_device(device_data)
                 for device_data in data["devices"].values()
             ]
-        }
+        })
 
     def _update_or_create_device(self, data: dict[str, Any]) -> Device:
         device = self.devices.get(data["id"])
@@ -225,13 +240,14 @@ class UserInfo:
 
     def _update(self, data):
         self.user_id = data["user_id"]
-        self.homes |= {
+        self.homes.update({
             home.home_id: home
             for home in [
-                self.homes.get(home_data["smarthome_id"], SmartHomeInfo(home_data))
+                self.homes.get(home_data["smarthome_id"],
+                               SmartHomeInfo(home_data))
                 for home_data in data["smarthomes"].values()
             ]
-        }
+        })
 
 
 class SmartHomeInfo:
@@ -341,9 +357,11 @@ class Radiator(Device):
         TEMP_BOOST: "consigne_boost",
     }
 
-    _TEMPS_AVAILABLE = [TEMP_ECO, TEMP_FROST, TEMP_COMFORT, TEMP_CURRENT, TEMP_BOOST]
+    _TEMPS_AVAILABLE = [TEMP_ECO, TEMP_FROST,
+                        TEMP_COMFORT, TEMP_CURRENT, TEMP_BOOST]
     _TEMPS_READONLY = [TEMP_CURRENT, TEMP_TARGET, TEMP_BOOST]
-    _MODES_AVAILABLE = [MODE_COMFORT, MODE_ECO, MODE_FROST, MODE_PROGRAM, MODE_OFF]
+    _MODES_AVAILABLE = [MODE_COMFORT, MODE_ECO,
+                        MODE_FROST, MODE_PROGRAM, MODE_OFF]
 
     def __init__(self, home: SmartHome, data: dict) -> None:
         super().__init__(home, data, Device.DEVICE_RADIATOR)
@@ -356,7 +374,7 @@ class Radiator(Device):
         self.time_boost: int = int(data["time_boost"])
         self.active: bool = data["heating_up"] == "1"
         self.heat_mode: str = self._program_type.heat_mode
-        self.temp_mode: str = self._program_type.temp_mode
+        self.temp_mode: str = self._program_type.temp_mode or 'off'
         self.temperatures: dict[str, Temperature] = {
             temp: Temperature(
                 int(data[self._TEMP_MAP[temp]]),
@@ -367,7 +385,7 @@ class Radiator(Device):
         }
         self.temperatures[TEMP_TARGET] = Temperature(
             None
-            if self.temp_mode is None
+            if self.temp_mode == 'off'
             else self.temperatures[self.temp_mode].device,
             is_writable=False,
             name=TEMP_TARGET,
@@ -376,7 +394,8 @@ class Radiator(Device):
     async def set_temperature(self, temp_type: str, temp_value: int, unit: str):
         query_params = {}
         query_params["id_device"] = self.id_local
-        query_params[self._TEMP_MAP[temp_type]] = Temperature(temp_value, unit).device
+        query_params[self._TEMP_MAP[temp_type]
+                     ] = Temperature(temp_value, unit).device
 
         await self.home.write(query_params)
 
