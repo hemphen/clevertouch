@@ -72,7 +72,6 @@ class ApiSession:
             "lang": self.API_LANG,
         }
 
-        print(password_hash)
         try:
             result = await self._api_post(endpoint, payload)
         except ApiException as ex:
