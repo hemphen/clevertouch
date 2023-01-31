@@ -25,3 +25,7 @@ license = {text = "MIT"}
 [build-system]
 requires = ["pdm-pep517>=1.0"]
 build-backend = "pdm.pep517.api"
+
+[tool.pytest.ini_options]
+log_cli = 1
+log_cli_level = "DEBUG"
