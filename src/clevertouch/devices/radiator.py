@@ -12,7 +12,7 @@ from .const import DeviceType
 
 class _ModeInfo(NamedTuple):
     heat_mode: HeatMode
-    temp_mode: TempType
+    temp_type: TempType
 
 
 class HeatMode(StrEnum):
@@ -108,7 +108,7 @@ class Radiator(Device):
         self.time_boost: int = int(data["time_boost"])
         self.active: bool = data["heating_up"] == "1"
         self.heat_mode: str = self._program_type.heat_mode
-        self.temp_mode: str = self._program_type.temp_mode
+        self.temp_type: str = self._program_type.temp_type
         self.temperatures: dict[str, Temperature] = {
             temp: Temperature(
                 int(data[self._TEMP_TYPE_TO_DEVICE[temp]]),
@@ -119,18 +119,18 @@ class Radiator(Device):
         }
         self.temperatures[TempType.TARGET] = Temperature(
             None
-            if self.temp_mode == "off"
-            else self.temperatures[self.temp_mode].device,
+            if self.temp_type == TempType.NONE
+            else self.temperatures[self.temp_type].device,
             is_writable=False,
             name=TempType.TARGET,
         )
 
-    async def set_temperature(self, temp_type: str, temp_value: int, unit: str):
+    async def set_temperature(self, temp_type: str, temp_value: float, unit: str):
         """Set a specific temperature for a radiator"""
         if temp_type not in self._TEMP_TYPE_TO_DEVICE:
             raise ApiError(f"Temperature {temp_type} not available.")
         elif temp_type in self._READONLY_TEMP_TYPES:
-            raise ApiError(f"Temperature {temp_type} does is read-only.")
+            raise ApiError(f"Temperature {temp_type} is read-only.")
 
         query_params = {}
         query_params["id_device"] = self.id_local
