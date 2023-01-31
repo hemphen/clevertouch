@@ -10,7 +10,7 @@ dev = [
 
 [project]
 name = "clevertouch"
-version = "0.2.0b1"
+version = "0.2.0"
 description = "API for interacting with Touch E3 smart device controllers via CleverTouch cloud accounts"
 authors = [
     {name = "hemphen", email = "michael.hemph@gmail.com"},
