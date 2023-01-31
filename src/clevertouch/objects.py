@@ -95,7 +95,7 @@ class Home:
                     self._api_session, self.info, device_data
                 )
             else:
-                device.update(data)
+                device.update(device_data)
 
     async def refresh(self) -> None:
         """Refresh the home by calling the cloud API"""
