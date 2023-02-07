@@ -97,19 +97,23 @@ class Radiator(Device):
     ]
 
     def __init__(self, session: ApiSession, home: HomeInfo, data: dict) -> None:
-        super().__init__(session, home, data, DeviceType.RADIATOR)
+        super().__init__(session, home, data, DeviceType.RADIATOR, do_update=False)
         self.modes: list[str] = self._AVAILABLE_HEAT_MODES
+        self.active: bool = False
+        self.heat_mode = HeatMode.OFF
+        self.temp_type = TempType.NONE
+        self.temperatures: dict[str, Temperature] = {}
+        self.update(data)
 
     def update(self, data: dict[str, Any]):
         """Update the radiator from cloud API data."""
         super().update(data)
-        self.mode_num: str = data["gv_mode"]
-        self._program_type: _ModeInfo = self._DEVICE_TO_MODE_TYPE[self.mode_num]
-        self.time_boost: int = int(data["time_boost"])
-        self.active: bool = data["heating_up"] == "1"
-        self.heat_mode: str = self._program_type.heat_mode
-        self.temp_type: str = self._program_type.temp_type
-        self.temperatures: dict[str, Temperature] = {
+        mode_num = data["gv_mode"]
+        program_type = self._DEVICE_TO_MODE_TYPE[mode_num]
+        self.active = data["heating_up"] == "1"
+        self.heat_mode = program_type.heat_mode
+        self.temp_type = program_type.temp_type
+        self.temperatures = {
             temp: Temperature(
                 int(data[self._TEMP_TYPE_TO_DEVICE[temp]]),
                 is_writable=temp not in self._READONLY_TEMP_TYPES,
@@ -132,13 +136,32 @@ class Radiator(Device):
         elif temp_type in self._READONLY_TEMP_TYPES:
             raise ApiError(f"Temperature {temp_type} is read-only.")
 
+        new_temp = Temperature(
+            temp_value,
+            unit,
+            is_writable=True,
+            name=temp_type)
+
         query_params = {}
         query_params["id_device"] = self.id_local
-        query_params[Radiator._TEMP_TYPE_TO_DEVICE[temp_type]] = Temperature(
-            temp_value, unit
-        ).device
+        query_params[Radiator._TEMP_TYPE_TO_DEVICE[temp_type]] = new_temp.device
 
         await self._session.write_query(self.home.home_id, query_params)
+
+        # This is debatable - for some scenarios it is reasonable to
+        # update the value in the current object with the assumed
+        # change, for others not
+        self.temperatures[temp_type] = new_temp
+
+        # To further complicate. If the temp_type set is the same type
+        # that the object currently targets, that value should be updated as well
+        if temp_type==self.temp_type:
+            self.temperatures[TempType.TARGET] = Temperature(
+                new_temp.device,
+                is_writable=False,
+                name=TempType.TARGET,
+            )
+
 
     async def set_heat_mode(self, heat_mode: str):
         """Set a the heating mode for a radiator"""
@@ -152,9 +175,15 @@ class Radiator(Device):
 
         await self._session.write_query(self.home.home_id, query_params)
 
+        # This is debatable - for some scenarios it is reasonable to
+        # update the value in the current object with the assumed
+        # change, for others not
+        self.heat_mode = heat_mode
+
 
 class TempUnit(StrEnum):
     """Enum of available temperature units."""
+
     DEVICE = "device"
     CELSIUS = "celsius"
     FARENHEIT = "farenheit"
@@ -162,6 +191,7 @@ class TempUnit(StrEnum):
 
 class Temperature:
     """Models a temperature with device specific unit conversions."""
+
     def __init__(
         self,
         temperature: Optional[float],

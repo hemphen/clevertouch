@@ -15,12 +15,15 @@ class Device:
         home: HomeInfo,
         data: dict[str, Any],
         device_type: str,
+        *,
+        do_update: bool = True
     ) -> None:
         self.device_type: str = device_type
         self._session: ApiSession = session
         self.home: HomeInfo = home
         self.device_id: str = Device.get_id(data)
-        self.update(data)
+        if do_update:
+            self.update(data)
 
     def update(self, data: dict[str, Any]):
         """Update the device information from cloud API data"""
