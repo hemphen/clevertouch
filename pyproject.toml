@@ -10,10 +10,23 @@ dev = [
 
 [project]
 name = "clevertouch"
-version = "0.2.2"
-description = "API for interacting with Touch E3 smart device controllers via CleverTouch cloud accounts"
+version = "0.2.3"
+description = "A Python API for interacting with LVI/Purmo Touch E3-connected radiators"
+repository = "https://github.com/hemphen/clevertouch"
+keywords = [
+    "LVI", 
+    "home automation", 
+    "heating"
+]
 authors = [
     {name = "hemphen", email = "michael.hemph@gmail.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Topic :: Home Automation",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
 ]
 dependencies = [
     "aiohttp>=3.8.1",
