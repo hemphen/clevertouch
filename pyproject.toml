@@ -12,7 +12,6 @@ dev = [
 name = "clevertouch"
 version = "0.2.3"
 description = "A Python API for interacting with LVI/Purmo Touch E3-connected radiators"
-repository = "https://github.com/hemphen/clevertouch"
 keywords = [
     "LVI", 
     "home automation", 
@@ -24,7 +23,7 @@ authors = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Topic :: Home Automation",
-    "Topic :: Software Development :: Libraries :: Python Modules"
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
 ]
@@ -34,6 +33,9 @@ dependencies = [
 requires-python = ">=3.8"
 readme = "README.md"
 license = {text = "MIT"}
+
+[project.urls]
+"Source Code" = "https://github.com/hemphen/clevertouch"
 
 [build-system]
 requires = ["pdm-pep517>=1.0"]
