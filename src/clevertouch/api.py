@@ -83,7 +83,7 @@ class ApiSession:
         if password_hash is None or password_hash == "":
             if password is None:
                 raise ApiError("No password provided")
-            password_hash = md5(password.encode()).hexdigest().encode().decode()
+            password_hash = md5(password.encode()).hexdigest()
 
         endpoint = "human/user/auth/"
         payload = {
