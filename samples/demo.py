@@ -5,8 +5,7 @@ import asyncio
 import os
 
 from clevertouch import Account, ApiError
-from clevertouch.devices import Radiator
-
+from clevertouch.devices import Radiator, OnOffDevice
 
 async def authenticate(email, password, token) -> Account:
     """Authenticate with the cloud API."""
@@ -55,7 +54,8 @@ async def run_demo(email, password, token) -> None:
                 if isinstance(device, Radiator):
                     for temp_name, temp in device.temperatures.items():
                         print(f"      Temp {temp_name} = {temp.celsius:.1f} C")
-
+                if isinstance(device, OnOffDevice):
+                    print(f"      {device.device_type} is {'on' if device.is_on else 'off'}")
 
 def main():
     """Main entry point"""
