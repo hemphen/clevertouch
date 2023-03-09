@@ -5,18 +5,19 @@ from typing import Any
 from ..api import ApiSession
 from ..info import HomeInfo
 from .device import Device
-from .const import DeviceType
+from .const import DeviceType, DeviceTypeId
+from .onoff import Light, Outlet
 from .radiator import Radiator
 
 
 def create_device(session: ApiSession, home: HomeInfo, data: dict[str, Any]) -> Device:
     """Create a device of of specific types based on the provided data."""
-    nv_mode = data["nv_mode"]
-    if nv_mode == "0":
+    device_type_id = int(data["nv_mode"])
+    if device_type_id == DeviceTypeId.RADIATOR:
         return Radiator(session, home, data)
-    elif nv_mode == "1":
-        return Device(session, home, data, DeviceType.LIGHT)
-    elif nv_mode == "12":
-        return Device(session, home, data, DeviceType.OUTLET)
+    elif device_type_id == DeviceTypeId.LIGHT:
+        return Light(session, home, data)
+    elif device_type_id == DeviceTypeId.OUTLET:
+        return Outlet(session, home, data)
     else:
-        return Device(session, home, data, DeviceType.UNKNOWN)
+        return Device(session, home, data, DeviceType.UNKNOWN, device_type_id)

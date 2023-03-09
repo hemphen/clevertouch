@@ -7,7 +7,7 @@ from ..info import HomeInfo
 from ..util import StrEnum
 
 from .device import Device
-from .const import DeviceType
+from .const import DeviceType, DeviceTypeId
 
 
 class _ModeInfo(NamedTuple):
@@ -97,7 +97,7 @@ class Radiator(Device):
     ]
 
     def __init__(self, session: ApiSession, home: HomeInfo, data: dict) -> None:
-        super().__init__(session, home, data, DeviceType.RADIATOR, do_update=False)
+        super().__init__(session, home, data, DeviceType.RADIATOR, DeviceTypeId.RADIATOR, do_update=False)
         self.modes: list[str] = self._AVAILABLE_HEAT_MODES
         self.active: bool = False
         self.heat_mode = HeatMode.OFF
