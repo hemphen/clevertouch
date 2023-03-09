@@ -140,8 +140,8 @@ class ApiSession:
         payload = {
             "email": self.email,
         }
-        _, data, _ = await self._read(endpoint, payload)
-        return data
+        result = await self._read(endpoint, payload)
+        return result.data
 
     async def read_home_data(self, home_id: str) -> dict[str, Any]:
         """Read home data from the cloud API."""
@@ -149,8 +149,8 @@ class ApiSession:
         payload = {
             "smarthome_id": home_id,
         }
-        _, data, _ = await self._read(endpoint, payload)
-        return data
+        result = await self._read(endpoint, payload)
+        return result.data
 
     async def write_query(self, home_id: str, query_params: dict[str, Any]):
         """Write an update query to the cloud API."""
