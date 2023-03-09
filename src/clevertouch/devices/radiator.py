@@ -216,7 +216,7 @@ class Temperature:
         elif unit == TempUnit.DEVICE:
             device_temperature = round(temperature)
         else:
-            raise Exception("Unknown unit")
+            raise KeyError(f"Unknown unit: {unit}")
 
         self.device = device_temperature
         self.celsius = (device_temperature - 320) / 18
