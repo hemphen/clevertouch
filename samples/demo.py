@@ -4,19 +4,22 @@ import argparse
 import asyncio
 import os
 
-from clevertouch import Account, ApiError
+from clevertouch import Account, ApiAuthError, ApiConnectError
 from clevertouch.devices import Radiator, OnOffDevice
 
-async def authenticate(email, password, token) -> Account:
+class ToolError(Exception):
+    """General exceptions from the demo"""
+
+async def authenticate(email, password, token, *, host=None) -> Account:
     """Authenticate with the cloud API."""
     if email is None:
-        raise Exception(
+        raise ToolError(
             "Email must be specified, "
             "either with --email or in environment variable CLEVERTOUCH_EMAIL"
         )
 
     if password is None and token is None:
-        raise Exception(
+        raise ToolError(
             "Either password or token must be specified. "
             "Token can be set via --token or in environment variable CLEVERTOUCH_TOKEN"
         )
@@ -25,21 +28,23 @@ async def authenticate(email, password, token) -> Account:
         print("Both password and token was specified. Preferring password.")
         token = None
 
-    account = Account(email, token)
+    account = Account(email, token, host=host)
 
     if password is not None:
         try:
             # We need to authenticate via cloud
             await account.authenticate(email, password)
-        except Exception as ex:
-            raise Exception("Authentication failed.") from ex
+        except ApiAuthError as ex:
+            raise ToolError("Authentication failed") from ex
+        except ApiConnectError as ex:
+            raise ToolError("Connection failed") from ex
 
     return account
 
 
-async def run_demo(email, password, token) -> None:
+async def run_demo(email, password, token, *, host=None) -> None:
     """Run the demo asynchronously"""
-    async with await authenticate(email, password, token) as account:
+    async with await authenticate(email, password, token, host=host) as account:
         print(f"The account with email {account.email} was authenticated")
 
         user = await account.get_user()
@@ -55,13 +60,19 @@ async def run_demo(email, password, token) -> None:
                     for temp_name, temp in device.temperatures.items():
                         print(f"      Temp {temp_name} = {temp.celsius:.1f} C")
                 if isinstance(device, OnOffDevice):
-                    print(f"      {device.device_type} is {'on' if device.is_on else 'off'}")
+                    print(
+                        f"      {device.device_type} is {'on' if device.is_on else 'off'}"
+                    )
+
 
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(prog="demo", description="Demo of the library.")
     parser.add_argument(
         "-e", "--email", help="CleverTouch account email", required=False, default=None
+    )
+    parser.add_argument(
+        "--host", help="Host name", required=False, default="https://e3.lvi.eu"
     )
     parser.add_argument(
         "-p",
@@ -81,8 +92,8 @@ def main():
     token = args.token or os.environ.get("CLEVERTOUCH_TOKEN", None)
 
     try:
-        asyncio.run(run_demo(email, password, token))
-    except ApiError as ex:
+        asyncio.run(run_demo(email, password, token, host=args.host))
+    except ToolError as ex:
         print(ex)
 
 
