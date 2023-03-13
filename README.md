@@ -16,7 +16,31 @@ can either use lower-level calls using an `ApiSession` object with methods for r
 friendly functions and objects for the most relevant properties of homes and devices.
 
 The _most_ useful methods/properties of the _most_ relevant objects are listed below. A full description of the functionality is only available by reading the source
-code. 
+code.
+
+## Other brands
+
+While untested, a number of other product lines seem to be using the same controller and software with different branding.
+
+Applications using the following URLs might work, fully or partially, by specifying the `host` argument when creating an `Account` or `ApiSession` (see below).
+
+* Walter Meier Metalplast smart-comfort - [https://www.smartcomfort.waltermeier.com](https://www.smartcomfort.waltermeier.com)
+* Frico PF Smart - [https://fricopfsmart.frico.se](https://fricopfsmart.frico.se)
+* Fenix V24 Wifi - [https://v24.fenixgroup.eu](https://v24.fenixgroup.eu)
+* Vogel & Noot E3 App - [https://e3.vogelundnoot.com](https://e3.vogelundnoot.com)
+* CordiVari My Way Cosy Home - [https://cordivarihome.com](https://cordivarihome.com)
+
+Additionally, Watts Vision ([https://smarthome.wattselectronics.com](https://smarthome.wattselectronics.com)) uses the same app but a different/improved authentication process. Work is needed to support
+that process within this library.
+
+## Other implementations / GitHub repositories
+
+There are available alternative implementations with unknown status of functionality available on GitHub.
+
+* Watts Vision support for Home Assistant is provided through the repo [pwesters/watts_vision](https://github.com/pwesters/watts_vision/).
+* A Watts Vision library is also available in [mjkl-gh/aio-watts-vision](https://github.com/mjkl-gh/aio-watts-vision).
+* Library support for LVI heaters can be found in [hwaastad/pylvi](https://github.com/hwaastad/pylvi) with Home Assistant support in [hwaastad/lvi](https://github.com/hwaastad/lvi).
+* An alternative solution to support Home Assistant by streaming values via MQTT is available in [komppa/tempco2mqtt](https://github.com/komppa/tempco2mqtt).
 
 ## Using the higher-level API
 
@@ -26,7 +50,7 @@ See [samples/demo.py](https://github.com/hemphen/clevertouch/blob/samples/demo.p
 
 | Methods | Description |
 | --- | --- |
-| `Account()` | Create an `Account` object. |
+| `Account(**host)` | Create an `Account` object. Optionally specifying the host (including protocol), defaulting to https://e3.lvi.eu. |
 | `authenticate(email, password)` | Authenticate with the service. |
 | `get_user()` | Returns a refreshable `User` object containing info about all available homes. |
 | `get_home(id)` | Returns a refreshable `Home` object for a home with the specific `id`. |

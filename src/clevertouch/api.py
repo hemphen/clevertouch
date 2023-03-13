@@ -52,13 +52,18 @@ class ApiSession:
     """Interface to the cloud API."""
 
     API_LANG = "en_GB"
-    API_BASE = "https://e3.lvi.eu"
+    _LVI_API_BASE = "https://e3.lvi.eu"
     API_PATH = "/api/v0.1/"
 
     def __init__(
-        self, email: Optional[str] = None, token: Optional[str] = None
+        self,
+        email: Optional[str] = None,
+        token: Optional[str] = None,
+        *,
+        host: Optional[str] = None
     ) -> None:
-        self._http_session: ClientSession = ClientSession(self.API_BASE)
+        api_base = host or self._LVI_API_BASE
+        self._http_session: ClientSession = ClientSession(api_base)
         self.email: Optional[str] = email
         self.token: Optional[str] = token
 

@@ -13,9 +13,13 @@ class Account:
     """A represention of an account connected to the cloud API."""
 
     def __init__(
-        self, email: Optional[str] = None, token: Optional[str] = None
+        self,
+        email: Optional[str] = None,
+        token: Optional[str] = None,
+        *,
+        host: Optional[str] = None
     ) -> None:
-        self._api_session: ApiSession = ApiSession(email, token)
+        self._api_session: ApiSession = ApiSession(email, token, host=host)
         self.email: Optional[str] = email
         self.user: Optional[User] = None
         self.homes: dict[str, Home] = {}

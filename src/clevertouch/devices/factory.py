@@ -12,7 +12,7 @@ from .radiator import Radiator
 
 def create_device(session: ApiSession, home: HomeInfo, data: dict[str, Any]) -> Device:
     """Create a device of of specific types based on the provided data."""
-    device_type_id = int(data["nv_mode"])
+    device_type_id = int(data["nv_mode"] or DeviceTypeId.UNDEFINED)
     if device_type_id == DeviceTypeId.RADIATOR:
         return Radiator(session, home, data)
     elif device_type_id == DeviceTypeId.LIGHT:
