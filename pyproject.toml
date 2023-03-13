@@ -10,7 +10,7 @@ dev = [
 
 [project]
 name = "clevertouch"
-version = "0.2.5"
+version = "0.3.0"
 description = "A Python API for interacting with LVI/Purmo Touch E3-connected radiators"
 keywords = [
     "LVI", 
