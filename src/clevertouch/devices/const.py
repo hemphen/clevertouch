@@ -17,3 +17,4 @@ class DeviceTypeId(IntEnum):
     RADIATOR = 0
     LIGHT = 1
     OUTLET = 12
+    UNDEFINED = -1
