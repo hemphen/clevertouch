@@ -62,6 +62,7 @@ class Radiator(Device):
         HeatMode.FROST: "2",
         HeatMode.COMFORT: "0",
         HeatMode.PROGRAM: "11",
+        HeatMode.BOOST: "4",
         HeatMode.OFF: "1",
     }
 
@@ -93,6 +94,7 @@ class Radiator(Device):
         HeatMode.ECO,
         HeatMode.FROST,
         HeatMode.PROGRAM,
+        HeatMode.BOOST,
         HeatMode.OFF,
     ]
 
