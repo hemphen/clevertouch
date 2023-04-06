@@ -86,7 +86,6 @@ class Radiator(Device):
     _READONLY_TEMP_TYPES: list[str] = [
         TempType.CURRENT,
         TempType.TARGET,
-        TempType.BOOST,
     ]
 
     _AVAILABLE_HEAT_MODES: list[str] = [
