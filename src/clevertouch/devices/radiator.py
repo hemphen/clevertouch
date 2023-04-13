@@ -98,11 +98,20 @@ class Radiator(Device):
     ]
 
     def __init__(self, session: ApiSession, home: HomeInfo, data: dict) -> None:
-        super().__init__(session, home, data, DeviceType.RADIATOR, DeviceTypeId.RADIATOR, do_update=False)
+        super().__init__(
+            session,
+            home,
+            data,
+            DeviceType.RADIATOR,
+            DeviceTypeId.RADIATOR,
+            do_update=False,
+        )
         self.modes: list[str] = self._AVAILABLE_HEAT_MODES
         self.active: bool = False
         self.heat_mode = HeatMode.OFF
         self.temp_type = TempType.NONE
+        self.boost_time: int = 0
+        self.boost_remaining: int = 0
         self.temperatures: dict[str, Temperature] = {}
         self.update(data)
 
@@ -129,6 +138,27 @@ class Radiator(Device):
             is_writable=False,
             name=TempType.TARGET,
         )
+        # Read boost settings
+        # 'boost_time' is the interval the user defined boost time
+        try:
+            self.boost_time = int(data["time_boost"])
+        except KeyError:  # The key doesn't exist
+            self.boost_time = 0
+        except ValueError:  # The value can not be converted to an int
+            self.boost_time = 0
+        # 'time_boost_format_chrono' holds remaining boost time (if active)
+        try:
+            node = data["time_boost_format_chrono"]
+            self.boost_remaining = (
+                int(node["d"]) * 24 * 60 * 60
+                + int(node["h"]) * 60 * 60
+                + int(node["m"]) * 60
+                + int(node["s"])
+            )
+        except KeyError:
+            self.boost_remaining = 0
+        except ValueError:
+            self.boost_remaining = 0
 
     async def set_temperature(self, temp_type: str, temp_value: float, unit: str):
         """Set a specific temperature for a radiator"""
@@ -137,11 +167,7 @@ class Radiator(Device):
         elif temp_type in self._READONLY_TEMP_TYPES:
             raise ApiError(f"Temperature {temp_type} is read-only.")
 
-        new_temp = Temperature(
-            temp_value,
-            unit,
-            is_writable=True,
-            name=temp_type)
+        new_temp = Temperature(temp_value, unit, is_writable=True, name=temp_type)
 
         query_params = {}
         query_params["id_device"] = self.id_local
@@ -156,13 +182,12 @@ class Radiator(Device):
 
         # To further complicate. If the temp_type set is the same type
         # that the object currently targets, that value should be updated as well
-        if temp_type==self.temp_type:
+        if temp_type == self.temp_type:
             self.temperatures[TempType.TARGET] = Temperature(
                 new_temp.device,
                 is_writable=False,
                 name=TempType.TARGET,
             )
-
 
     async def set_heat_mode(self, heat_mode: str):
         """Set a the heating mode for a radiator"""
