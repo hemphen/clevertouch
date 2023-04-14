@@ -66,6 +66,13 @@ class Radiator(Device):
         HeatMode.OFF: "1",
     }
 
+    _HEAT_MODE_TO_WRITABLE_TEMP_TYPE: dict[str, str] = {
+        HeatMode.ECO: TempType.ECO,
+        HeatMode.FROST: TempType.FROST,
+        HeatMode.COMFORT: TempType.COMFORT,
+        HeatMode.BOOST: TempType.BOOST,
+    }
+
     _TEMP_TYPE_TO_DEVICE: dict[str, str] = {
         TempType.ECO: "consigne_eco",
         TempType.FROST: "consigne_hg",
@@ -139,14 +146,14 @@ class Radiator(Device):
             name=TempType.TARGET,
         )
         # Read boost settings
-        # 'boost_time' is the interval the user defined boost time
+        # 'boost_time' is the user writable boost time
         try:
             self.boost_time = int(data["time_boost"])
         except KeyError:  # The key doesn't exist
             self.boost_time = 0
         except ValueError:  # The value can not be converted to an int
             self.boost_time = 0
-        # 'time_boost_format_chrono' holds remaining boost time (if active)
+        # 'time_boost_format_chrono' holds remaining boost time with higher resolution
         try:
             node = data["time_boost_format_chrono"]
             self.boost_remaining = (
@@ -201,10 +208,79 @@ class Radiator(Device):
 
         await self._session.write_query(self.home.home_id, query_params)
 
-        # This is debatable - for some scenarios it is reasonable to
-        # update the value in the current object with the assumed
-        # change, for others not
+        # Debatable - see set_temperature
         self.heat_mode = heat_mode
+
+    async def set_boost_time(self, boost_time: int) -> None:
+        """Set default boost time for subsequent activations of boost mode"""
+
+        query_params = {}
+        query_params["id_device"] = self.id_local
+        query_params["time_boost"] = boost_time
+
+        await self._session.write_query(self.home.home_id, query_params)
+
+        # Debatable - see set_temperature
+        self.boost_time = boost_time
+
+    async def activate_mode(
+        self,
+        heat_mode: str,
+        *,
+        temp_value: Optional[float] = None,
+        temp_unit: Optional[str] = None,
+        boost_time: Optional[int] = None,
+    ) -> None:
+        """
+        Set the heating mode, optionally adjusting parameters.
+
+        Parameters:
+        heat_mode : str
+            Heat mode to activate. Should be one of the `HeatMode` constants.
+        temp_value : float, optional
+            Temperature value. Must be used together with `temp_unit`.
+        temp_unit : str, optional
+            Unit of `temp_value`. Should be `celsius`, `farenheit` or `device`.
+        boost_time : int, optional
+            Length of period that boost mode should be active, in seconds.
+            Applicable to `HeatMode.Boost` only.
+
+        Raises:
+        ApiError
+            If any of the arguments are invalid or incompatible.
+        """
+
+        if heat_mode not in self._HEAT_MODE_TO_DEVICE:
+            raise ApiError(f"Heating mode {heat_mode} not available.")
+        if (temp_value or temp_unit) and (not temp_value or not temp_unit):
+            raise ApiError("Both temp value and unit must be set.")
+        if temp_value and heat_mode not in self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE:
+            raise ApiError(f"Temperature can not be set for {heat_mode}.")
+        if boost_time and heat_mode != HeatMode.BOOST:
+            raise ApiError("Boost time can only be set for boost mode.")
+
+        query_params = {}
+        query_params["id_device"] = self.id_local
+        query_params["gv_mode"] = self._HEAT_MODE_TO_DEVICE[heat_mode]
+        query_params["nv_mode"] = self._HEAT_MODE_TO_DEVICE[heat_mode]
+
+        if temp_value:
+            temp_type = self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE[heat_mode]
+            new_temp = Temperature(
+                temp_value, temp_unit, is_writable=True, name=temp_type
+            )
+            query_params[self._TEMP_TYPE_TO_DEVICE[temp_type]] = new_temp.device
+            # Debatable - see set_temperature
+            self.temperatures[temp_type] = new_temp
+            self.temperatures[TempType.TARGET] = new_temp
+
+        if boost_time:
+            query_params["time_boost"] = boost_time
+            # Debatable - see set_temperature
+            self.boost_time = boost_time
+            self.boost_remaining = boost_time
+
+        await self._session.write_query(self.home.home_id, query_params)
 
 
 class TempUnit(StrEnum):
