@@ -147,25 +147,18 @@ class Radiator(Device):
         )
         # Read boost settings
         # 'boost_time' is the user writable boost time
-        try:
-            self.boost_time = int(data["time_boost"])
-        except KeyError:  # The key doesn't exist
-            self.boost_time = 0
-        except ValueError:  # The value can not be converted to an int
-            self.boost_time = 0
+        self.boost_time = int(data.get("time_boost") or 0)
         # 'time_boost_format_chrono' holds remaining boost time with higher resolution
-        try:
-            node = data["time_boost_format_chrono"]
+        node = data.get("time_boost_format_chrono")
+        if node:
             self.boost_remaining = (
-                int(node["d"]) * 24 * 60 * 60
-                + int(node["h"]) * 60 * 60
-                + int(node["m"]) * 60
-                + int(node["s"])
+                int(node.get("d") or 0) * 24 * 60 * 60
+                + int(node.get("h") or 0) * 60 * 60
+                + int(node.get("m") or 0) * 60
+                + int(node.get("s") or 0)
             )
-        except KeyError:
-            self.boost_remaining = 0
-        except ValueError:
-            self.boost_remaining = 0
+        else:
+            self.boost_remaining = None
 
     async def set_temperature(self, temp_type: str, temp_value: float, unit: str):
         """Set a specific temperature for a radiator"""
@@ -252,8 +245,8 @@ class Radiator(Device):
 
         if heat_mode not in self._HEAT_MODE_TO_DEVICE:
             raise ApiError(f"Heating mode {heat_mode} not available.")
-        if (temp_value or temp_unit) and (not temp_value or not temp_unit):
-            raise ApiError("Both temp value and unit must be set.")
+        if temp_value and not temp_unit:
+            raise ApiError("Unit must be set when a temp value is provided.")
         if temp_value and heat_mode not in self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE:
             raise ApiError(f"Temperature can not be set for {heat_mode}.")
         if boost_time and heat_mode != HeatMode.BOOST:
@@ -264,7 +257,7 @@ class Radiator(Device):
         query_params["gv_mode"] = self._HEAT_MODE_TO_DEVICE[heat_mode]
         query_params["nv_mode"] = self._HEAT_MODE_TO_DEVICE[heat_mode]
 
-        if temp_value:
+        if temp_value and temp_unit:
             temp_type = self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE[heat_mode]
             new_temp = Temperature(
                 temp_value, temp_unit, is_writable=True, name=temp_type
