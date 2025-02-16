@@ -15,7 +15,7 @@ class Device:
         home: HomeInfo,
         data: dict[str, Any],
         device_type: str,
-        device_type_id: int,
+        device_type_id: str,
         *,
         do_update: bool = True
     ) -> None:
@@ -23,7 +23,7 @@ class Device:
         self._session: ApiSession = session
         self.home: HomeInfo = home
         self.device_id: str = Device.get_id(data)
-        self.device_type_id: int = device_type_id
+        self.device_type_id: str = device_type_id
         if do_update:
             self.update(data)
 

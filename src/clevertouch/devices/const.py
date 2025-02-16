@@ -18,3 +18,11 @@ class DeviceTypeId(IntEnum):
     LIGHT = 1
     OUTLET = 12
     UNDEFINED = -1
+
+class DeviceTypeChar(StrEnum):
+    """Recognized device type ids"""
+
+    RADIATOR = "C"
+    LIGHT = "E"
+    OUTLET = "O"
+    UNDEFINED = "U"
