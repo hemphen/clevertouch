@@ -45,7 +45,7 @@ class Radiator(Device):
     _DEVICE_TO_MODE_TYPE: dict[str, _ModeInfo] = {
         "0": _ModeInfo(HeatMode.COMFORT, TempType.COMFORT),
         "1": _ModeInfo(HeatMode.OFF, TempType.NONE),
-        "2": _ModeInfo(HeatMode.COMFORT, TempType.COMFORT),
+        "2": _ModeInfo(HeatMode.FROST, TempType.FROST),
         "3": _ModeInfo(HeatMode.ECO, TempType.ECO),
         "4": _ModeInfo(HeatMode.BOOST, TempType.BOOST),
         # "5": ModeInfo("fan", None),
