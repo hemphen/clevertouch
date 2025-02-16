@@ -67,7 +67,10 @@ async def run_demo(email, password, token, *, host=None) -> None:
                 print(f"   Device: {device_id}: {device.label} ({device.device_type})")
                 if isinstance(device, Radiator):
                     for temp_name, temp in device.temperatures.items():
-                        print(f"      Temp {temp_name} = {temp.celsius:.1f} C")
+                        if temp.celsius:
+                            print(f"      Temp {temp_name} = {temp.celsius:.1f} C")
+                        else:
+                            print(f"      Temp {temp_name} = <not set>")
                     print(f"      Boost time setting = {device.boost_time} seconds")
                     print(f"      Boost time remaining = {device.boost_remaining} seconds")
                 if isinstance(device, OnOffDevice):

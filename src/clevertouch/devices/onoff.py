@@ -37,8 +37,8 @@ class OnOffDevice(Device):
         query_params = {}
         query_params["id_device"] = self.id_local
         query_params["on_off"] = "1" if turn_on else "0"
-        query_params["nv_mode"] = self.device_type_id
-        query_params["gv_mode"] = self.device_type_id
+        #query_params["nv_mode"] = self.device_type_id
+        #query_params["gv_mode"] = self.device_type_id
 
         await self._session.write_query(self.home.home_id, query_params)
 
