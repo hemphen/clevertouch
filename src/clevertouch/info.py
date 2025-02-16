@@ -26,7 +26,7 @@ class HomeInfo:
             self.zones = {
                 zone.id_local: zone
                 for zone in [
-                    ZoneInfo(zone_data) for zone_data in data["zones"].values()
+                    ZoneInfo(zone_data) for zone_data in data["zones"]
                 ]
             }
         else:
