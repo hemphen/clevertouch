@@ -1,9 +1,11 @@
 """Interface to the cloud API."""
+
 from __future__ import annotations
 import logging
 from typing import Optional, NamedTuple, Any
 from hashlib import md5
 from aiohttp import ClientSession, ClientConnectionError, ClientError
+import time
 
 from .util import ApiError
 
@@ -52,76 +54,115 @@ class ApiSession:
     """Interface to the cloud API."""
 
     API_LANG = "en_GB"
-    _LVI_API_BASE = "https://e3.lvi.eu"
     API_PATH = "/api/v0.1/"
+    CLIENT_ID = "app-front"
+
+    _DEFAULT_HOST = "e3.lvi.eu"
+    _DEFAULT_MANUFACTURER = "purmo"
 
     def __init__(
         self,
         email: Optional[str] = None,
-        token: Optional[str] = None,
+        refresh_token: Optional[str] = None,
         *,
-        host: Optional[str] = None
+        host: Optional[str] = None,
+        manufacturer: Optional[str] = None,
     ) -> None:
-        api_base = host or self._LVI_API_BASE
-        self._http_session: ClientSession = ClientSession(api_base)
+        host = host or self._DEFAULT_HOST
+        manufacturer = manufacturer or self._DEFAULT_MANUFACTURER
+        self._token_url = (
+            f"https://auth.{host}/realms/{manufacturer}/protocol/openid-connect/token"
+        )
+        self._api_base = f"https://{host}{self.API_PATH}"
+        self._http_session: ClientSession = ClientSession()
         self.email: Optional[str] = email
-        self.token: Optional[str] = token
+        self.access_token: Optional[str] = None
+        self.refresh_token: Optional[str] = refresh_token
+        self.expires_at: float = 0.0
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "ApiSession":
         return self
 
-    async def __aexit__(self, *excinfo):
+    async def __aexit__(self, *excinfo) -> None:
         await self.close()
 
     async def close(self):
         """Close the connection to the cloud API."""
-        await self._http_session.close()
+        if self._http_session:
+            await self._http_session.close()
+            self._http_session = None
 
-    async def authenticate(
-        self,
-        email: str,
-        password: Optional[str] = None,
-        password_hash: Optional[str] = None,
-    ):
-        """Authenticate with the cloud API."""
+    async def authenticate(self, email: str, password: str):
+        """Authenticate with the cloud API.
+        On success, sets self.access_token, self.refresh_token, self.expires_at.
+        """
         self.email = email
-        if password_hash is None or password_hash == "":
-            if password is None:
-                raise ApiError("No password provided")
-            password_hash = md5(password.encode()).hexdigest()
 
-        endpoint = "human/user/auth/"
-        payload = {
-            "email": email,
-            "password": password_hash,
-            "remember_me": "true",
-            "lang": self.API_LANG,
+        data = {
+            "grant_type": "password",
+            "client_id": self.CLIENT_ID,
+            "username": email,
+            "password": password,
         }
 
-        result = await self._post(endpoint, payload, authenticate=False)
+        try:
+            _LOGGER.debug("Login to openid at '%s' with data '%s'", self._token_url, data)
+            async with self._http_session.post(self._token_url, data=data) as response:
+                if response.status != 200:
+                    _LOGGER.error("OIDC login failed (%s)", response.status)
+                    raise ApiAuthError("Invalid credentials or error fetching token.")
+                token_data = await response.json()
+        except ClientError as exc:
+            raise ApiConnectError(
+                f"Error connecting to {self._token_url}: {exc}"
+            ) from exc
 
-        status = result.status
-        if status.key != "OK":
-            if status.key == "ERR_ROUTE":
-                raise ApiConnectError(status)
-            if status.key == "ERR_PARAM":
-                raise ApiAuthError("Invalid email or password")
-            raise ApiCallError(status, "Authentication failed %s", status)
+        self.access_token = token_data["access_token"]
+        self.refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in", 3600)  # default 1h
+        self.expires_at = time.time() + expires_in
 
-        self.email = result.data["user_infos"]["email"]
-        self.token = result.data["token"]
+    async def refresh_openid(self) -> None:
+        """Refresh the existing token using the 'refresh_token' grant."""
+        if not self.refresh_token:
+            raise ApiAuthError("No refresh token stored; cannot refresh.")
+
+        data = {
+            "grant_type": "refresh_token",
+            "client_id": self.CLIENT_ID,
+            "refresh_token": self.refresh_token,
+        }
+        try:
+            async with self._http_session.post(self._token_url, data=data) as response:
+                if response.status != 200:
+                    _LOGGER.error("OIDC refresh failed (%s)", response.status)
+                    raise ApiAuthError("Refresh token invalid or expired.")
+                token_data = await response.json()
+        except ClientError as exc:
+            raise ApiConnectError(
+                f"Error connecting to {self._token_url}: {exc}"
+            ) from exc
+
+        self.access_token = token_data["access_token"]
+        self.refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in", 3600)
+        self.expires_at = time.time() + expires_in
+
+    async def _ensure_valid_token(self) -> None:
+        """Refresh if our token is expired (simple check)."""
+        if time.time() >= self.expires_at:
+            await self.refresh_openid()
 
     async def _read(
         self,
         endpoint: str,
         payload: dict,
         *,
-        authenticate: bool = True,
         throw_on_error: bool = True,
     ) -> ApiResult:
-        result = await self._post(endpoint, payload, authenticate=authenticate)
+        result = await self._post(endpoint, payload)
         if throw_on_error:
-            if result.status.code != 1:
+            if result.status.code not in [1, 8]:
                 raise ApiCallError(result.status, f"Read failed with {result.status}")
         return result
 
@@ -130,10 +171,9 @@ class ApiSession:
         endpoint: str,
         payload: dict,
         *,
-        authenticate: bool = True,
         throw_on_error: bool = True,
     ) -> ApiResult:
-        result = await self._post(endpoint, payload, authenticate=authenticate)
+        result = await self._post(endpoint, payload)
         if throw_on_error:
             if result.status.code != 8:
                 raise ApiCallError(result.status, f"Write failed with {result.status}")
@@ -174,7 +214,7 @@ class ApiSession:
         try:
             code = json["code"]
             data = json["data"]
-            parameters = json["parameters"]
+            parameters = json.get("parameters")
         except Exception as ex:
             raise ApiError("Unexpected JSON format in API response") from ex
 
@@ -188,36 +228,30 @@ class ApiSession:
 
         return ApiResult(status, data, parameters)
 
-    async def _post(
-        self, endpoint: str, payload: dict[str, Any], *, authenticate: bool
-    ) -> ApiResult:
-        if authenticate:
-            payload.update(
-                {
-                    "token": self.token,
-                    "lang": self.API_LANG,
-                }
-            )
+    async def _post(self, endpoint: str, payload: dict | None = None) -> dict:
+        """Make an authenticated API request"""
+        await self._ensure_valid_token()
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+        }
+
+        url = f"{self._api_base}{endpoint.lstrip('/')}"
 
         try:
             async with self._http_session.post(
-                self.API_PATH + endpoint, data=payload
-            ) as response:
-                response.raise_for_status()
-                json_data = await response.json()
-        except ClientConnectionError as ex:
-            raise ApiConnectError(f"Connection error - {ex}") from ex
-        except ClientError as ex:
-            raise ApiConnectError(f"Unexpected cloud API error - {ex}") from ex
+                url, data=payload or {}, headers=headers
+            ) as resp:
+                resp.raise_for_status()
+                json_data = await resp.json()
+        except ClientError as exc:
+            _LOGGER.exception("API request failed: %s", exc)
+            raise ApiConnectError(f"API request failed: {exc}") from exc
 
-        result = self._parse_api_json(json_data)
-
-        _LOGGER.debug(
-            "%s called with status %s (%s): %s",
-            endpoint,
-            result.status.key,
-            result.status.code,
-            result.status.value,
-        )
+        try:
+            result = self._parse_api_json(json_data)
+            _LOGGER.debug("%s called with status %s", endpoint, result)
+        except Exception as ex:
+            _LOGGER.exception("Could not parse JSON result from API request")
+            result = None
 
         return result

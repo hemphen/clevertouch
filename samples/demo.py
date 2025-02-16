@@ -3,6 +3,15 @@
 import argparse
 import asyncio
 import os
+import logging
+import sys
+
+# Configure root logger
+logging.basicConfig(
+    level=logging.DEBUG,  # Ensure all levels are captured
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 from clevertouch import Account, ApiAuthError, ApiConnectError
 from clevertouch.devices import Radiator, OnOffDevice
@@ -74,7 +83,7 @@ def main():
         "-e", "--email", help="CleverTouch account email", required=False, default=None
     )
     parser.add_argument(
-        "--host", help="Host name", required=False, default="https://e3.lvi.eu"
+        "--host", help="Host name", required=False, default="e3.lvi.eu"
     )
     parser.add_argument(
         "-p",
@@ -92,7 +101,7 @@ def main():
     email = args.email or os.environ.get("CLEVERTOUCH_EMAIL", None)
     password = args.password
     token = args.token or os.environ.get("CLEVERTOUCH_TOKEN", None)
-
+    
     try:
         asyncio.run(run_demo(email, password, token, host=args.host))
     except ToolError as ex:

@@ -37,11 +37,10 @@ class Account:
     async def authenticate(
         self,
         email: str,
-        password: Optional[str] = None,
-        password_hash: Optional[str] = None,
+        password: Optional[str] = None
     ) -> None:
         """Authenticate with the cloud API and store credentials."""
-        await self._api_session.authenticate(email, password, password_hash)
+        await self._api_session.authenticate(email, password)
         self.email = self._api_session.email
 
     async def get_user(self) -> User:
@@ -91,7 +90,7 @@ class Home:
     def _update(self, data):
         self.info.update(data)
 
-        for device_data in data["devices"].values():
+        for device_data in data["devices"]:
             device_id = Device.get_id(device_data)
             device = self.devices.get(device_id)
             if device is None:
@@ -126,6 +125,6 @@ class User:
         self.homes = {
             home.home_id: home
             for home in [
-                HomeInfo(data=home_data) for home_data in data["smarthomes"].values()
+                HomeInfo(data=home_data) for home_data in data["smarthomes"]
             ]
         }
