@@ -11,15 +11,7 @@ class DeviceType(StrEnum):
     OUTLET = "Outlet"
     UNKNOWN = "Unknown"
 
-class DeviceTypeId(IntEnum):
-    """Recognized device type ids"""
-
-    RADIATOR = 0
-    LIGHT = 1
-    OUTLET = 12
-    UNDEFINED = -1
-
-class DeviceTypeChar(StrEnum):
+class DeviceTypeId(StrEnum):
     """Recognized device type ids"""
 
     RADIATOR = "C"
