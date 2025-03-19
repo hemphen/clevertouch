@@ -76,7 +76,7 @@ class ApiSession:
         )
         self._api_base = f"https://{host}{self.API_PATH}"
         self.is_remote_session = session is not None
-        self._http_session: ClientSession = session
+        self._http_session: ClientSession = session or ClientSession()
         self.email: Optional[str] = email
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = refresh_token
