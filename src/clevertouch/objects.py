@@ -1,6 +1,7 @@
 """Provides an object-based abstraction for communicating with the cloud API."""
 from __future__ import annotations
 from typing import Optional, Any
+from aiohttp import ClientSession
 
 from .util import ApiError
 from .api import ApiSession
@@ -17,9 +18,10 @@ class Account:
         email: Optional[str] = None,
         token: Optional[str] = None,
         *,
-        host: Optional[str] = None
+        host: Optional[str] = None,
+        session: Optional[ClientSession] = None,
     ) -> None:
-        self._api_session: ApiSession = ApiSession(email, token, host=host)
+        self.api: ApiSession = ApiSession(email, token, host=host, session=session)
         self.email: Optional[str] = email
         self.user: Optional[User] = None
         self.homes: dict[str, Home] = {}
@@ -32,7 +34,7 @@ class Account:
 
     async def close(self) -> None:
         """Close the connection to the cloud API."""
-        await self._api_session.close()
+        await self.api.close()
 
     async def authenticate(
         self,
@@ -40,8 +42,8 @@ class Account:
         password: Optional[str] = None
     ) -> None:
         """Authenticate with the cloud API and store credentials."""
-        await self._api_session.authenticate(email, password)
-        self.email = self._api_session.email
+        await self.api.authenticate(email, password)
+        self.email = self.api.email
 
     async def get_user(self) -> User:
         """Get user information from the account.
@@ -53,7 +55,7 @@ class Account:
         if user is None:
             if self.email is None:
                 raise ApiError("no email specified")
-            user = User(self._api_session, self.email)
+            user = User(self.api, self.email)
             await user.refresh()
         return user
 
@@ -61,7 +63,7 @@ class Account:
         """Get information for a specific home."""
         home = self.homes.get(home_id)
         if home is None:
-            home = Home(self._api_session, home_id)
+            home = Home(self.api, home_id)
             await home.refresh()
         return home
 

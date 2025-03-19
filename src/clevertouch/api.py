@@ -67,6 +67,7 @@ class ApiSession:
         *,
         host: Optional[str] = None,
         manufacturer: Optional[str] = None,
+        session: Optional[ClientSession] = None,
     ) -> None:
         host = host or self._DEFAULT_HOST
         manufacturer = manufacturer or self._DEFAULT_MANUFACTURER
@@ -74,13 +75,16 @@ class ApiSession:
             f"https://auth.{host}/realms/{manufacturer}/protocol/openid-connect/token"
         )
         self._api_base = f"https://{host}{self.API_PATH}"
-        self._http_session: ClientSession = ClientSession()
+        self.is_remote_session = session is not None
+        self._http_session: ClientSession = session
         self.email: Optional[str] = email
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = refresh_token
         self.expires_at: float = 0.0
 
     async def __aenter__(self) -> "ApiSession":
+        if self._http_session is None:
+            self._http_session = ClientSession()
         return self
 
     async def __aexit__(self, *excinfo) -> None:
@@ -88,7 +92,7 @@ class ApiSession:
 
     async def close(self):
         """Close the connection to the cloud API."""
-        if self._http_session:
+        if not self.is_remote_session and self._http_session and not self._http_session.closed:
             await self._http_session.close()
             self._http_session = None
 
@@ -108,10 +112,7 @@ class ApiSession:
         try:
             _LOGGER.debug("Login to openid at '%s' with data '%s'", self._token_url, data)
             async with self._http_session.post(self._token_url, data=data) as response:
-                if response.status != 200:
-                    _LOGGER.error("OIDC login failed (%s)", response.status)
-                    raise ApiAuthError("Invalid credentials or error fetching token.")
-                token_data = await response.json()
+                token_data = await self._async_get_token_data(response)
         except ClientError as exc:
             raise ApiConnectError(
                 f"Error connecting to {self._token_url}: {exc}"
@@ -119,8 +120,22 @@ class ApiSession:
 
         self.access_token = token_data["access_token"]
         self.refresh_token = token_data.get("refresh_token")
-        expires_in = token_data.get("expires_in", 3600)  # default 1h
+        expires_in = token_data.get("expires_in", 300)  # default 5 min
         self.expires_at = time.time() + expires_in
+
+    async def _async_get_token_data(self, response) -> dict:
+        if response.status == 200:
+            _LOGGER.debug("Refreshed token successfully")
+            return await response.json()
+        if response.status==400 or response.status == 401:
+            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            raise ApiAuthError("Unauthorized.")
+        elif response.status == 500:
+            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            raise ApiError("Internal Server Error.")
+        else:
+            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            raise ApiError(f"Unknown error ({response.status}).")
 
     async def refresh_openid(self) -> None:
         """Refresh the existing token using the 'refresh_token' grant."""
@@ -134,10 +149,7 @@ class ApiSession:
         }
         try:
             async with self._http_session.post(self._token_url, data=data) as response:
-                if response.status != 200:
-                    _LOGGER.error("OIDC refresh failed (%s)", response.status)
-                    raise ApiAuthError("Refresh token invalid or expired.")
-                token_data = await response.json()
+                token_data = await self._async_get_token_data(response)
         except ClientError as exc:
             raise ApiConnectError(
                 f"Error connecting to {self._token_url}: {exc}"
@@ -249,7 +261,7 @@ class ApiSession:
 
         try:
             result = self._parse_api_json(json_data)
-            _LOGGER.debug("%s called with status %s", endpoint, result)
+            _LOGGER.debug("%s called and parsed successfully", endpoint)
         except Exception as ex:
             _LOGGER.exception("Could not parse JSON result from API request")
             result = None
