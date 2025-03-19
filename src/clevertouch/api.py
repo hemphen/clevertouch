@@ -110,7 +110,7 @@ class ApiSession:
         }
 
         try:
-            _LOGGER.debug("Login to openid at '%s' with data '%s'", self._token_url, data)
+            _LOGGER.debug("Login using password")
             async with self._http_session.post(self._token_url, data=data) as response:
                 token_data = await self._async_get_token_data(response)
         except ClientError as exc:
