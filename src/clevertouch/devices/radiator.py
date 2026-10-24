@@ -263,17 +263,21 @@ class Radiator(Device):
                 temp_value, temp_unit, is_writable=True, name=temp_type
             )
             query_params[self._TEMP_TYPE_TO_DEVICE[temp_type]] = new_temp.device
+
+        if boost_time:
+            query_params["time_boost"] = boost_time
+
+        await self._session.write_query(self.home.home_id, query_params)
+
+        if temp_value and temp_unit:
             # Debatable - see set_temperature
             self.temperatures[temp_type] = new_temp
             self.temperatures[TempType.TARGET] = new_temp
 
         if boost_time:
-            query_params["time_boost"] = boost_time
             # Debatable - see set_temperature
             self.boost_time = boost_time
             self.boost_remaining = boost_time
-
-        await self._session.write_query(self.home.home_id, query_params)
 
 
 class TempUnit(StrEnum):
