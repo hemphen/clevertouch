@@ -5,6 +5,7 @@ import asyncio
 import logging
 from typing import Optional, NamedTuple, Any
 from hashlib import md5
+from json import JSONDecodeError
 from aiohttp import ClientSession, ClientConnectionError, ClientError
 import time
 
@@ -115,7 +116,9 @@ class ApiSession:
             _LOGGER.debug("Login using password")
             async with self._http_session.post(self._token_url, data=data) as response:
                 token_data = await self._async_get_token_data(response)
-        except ClientError as exc:
+        except JSONDecodeError as exc:
+            raise ApiError("Invalid JSON in token response") from exc
+        except (ClientError, asyncio.TimeoutError) as exc:
             raise ApiConnectError(
                 f"Error connecting to {self._token_url}: {exc}"
             ) from exc
@@ -152,7 +155,9 @@ class ApiSession:
         try:
             async with self._http_session.post(self._token_url, data=data) as response:
                 token_data = await self._async_get_token_data(response)
-        except ClientError as exc:
+        except JSONDecodeError as exc:
+            raise ApiError("Invalid JSON in token response") from exc
+        except (ClientError, asyncio.TimeoutError) as exc:
             raise ApiConnectError(
                 f"Error connecting to {self._token_url}: {exc}"
             ) from exc
@@ -263,7 +268,9 @@ class ApiSession:
             ) as resp:
                 resp.raise_for_status()
                 json_data = await resp.json()
-        except ClientError as exc:
+        except JSONDecodeError as exc:
+            raise ApiError("Invalid JSON in API response") from exc
+        except (ClientError, asyncio.TimeoutError) as exc:
             _LOGGER.exception("API request failed: %s", exc)
             raise ApiConnectError(f"API request failed: {exc}") from exc
 
