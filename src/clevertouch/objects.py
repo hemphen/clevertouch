@@ -44,6 +44,8 @@ class Account:
         """Authenticate with the cloud API and store credentials."""
         await self.api.authenticate(email, password)
         self.email = self.api.email
+        self.user = None
+        self.homes.clear()
 
     async def get_user(self) -> User:
         """Get user information from the account.
@@ -57,14 +59,16 @@ class Account:
                 raise ApiError("no email specified")
             user = User(self.api, self.email)
             await user.refresh()
+            self.user = user
         return user
 
     async def get_home(self, home_id: str) -> Home:
-        """Get information for a specific home."""
+        """Get cached home information; call Home.refresh() for fresh data."""
         home = self.homes.get(home_id)
         if home is None:
             home = Home(self.api, home_id)
             await home.refresh()
+            self.homes[home_id] = home
         return home
 
     async def get_homes(self) -> list[Home]:
