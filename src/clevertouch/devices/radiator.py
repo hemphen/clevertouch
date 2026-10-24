@@ -201,8 +201,20 @@ class Radiator(Device):
 
         await self._session.write_query(self.home.home_id, query_params)
 
-        # Debatable - see set_temperature
-        self.heat_mode = heat_mode
+        self._update_heat_mode(heat_mode)
+
+    def _update_heat_mode(self, heat_mode: str) -> None:
+        """Assume the outgoing Program submode until the next refresh."""
+        mode_info = self._DEVICE_TO_MODE_TYPE[self._HEAT_MODE_TO_DEVICE[heat_mode]]
+        self.heat_mode = mode_info.heat_mode
+        self.temp_type = mode_info.temp_type
+        self.temperatures[TempType.TARGET] = Temperature(
+            None
+            if self.temp_type == TempType.NONE
+            else self.temperatures[self.temp_type].device,
+            is_writable=False,
+            name=TempType.TARGET,
+        )
 
     async def set_boost_time(self, boost_time: int) -> None:
         """Set default boost time for subsequent activations of boost mode"""
@@ -272,7 +284,8 @@ class Radiator(Device):
         if temp_value and temp_unit:
             # Debatable - see set_temperature
             self.temperatures[temp_type] = new_temp
-            self.temperatures[TempType.TARGET] = new_temp
+
+        self._update_heat_mode(heat_mode)
 
         if boost_time:
             # Debatable - see set_temperature
