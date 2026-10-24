@@ -183,3 +183,86 @@ async def test_mode_change_failure(
         await getattr(radiator, operation)(HeatMode.ECO)
 
     assert vars(radiator) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("arguments", "extra_payload", "target", "boost_time", "boost_remaining"),
+    [
+        pytest.param({}, {}, 24, 300, 150, id="omitted"),
+        pytest.param(
+            {"temp_value": 0, "temp_unit": TempUnit.CELSIUS},
+            {"consigne_boost": 320},
+            0,
+            300,
+            150,
+            id="zero-temperature",
+        ),
+        pytest.param(
+            {"boost_time": 0},
+            {"time_boost": 0},
+            24,
+            0,
+            0,
+            id="zero-boost-time",
+        ),
+    ],
+)
+async def test_activation_optional_arguments(
+    radiator: Radiator,
+    arguments: dict,
+    extra_payload: dict,
+    target: float,
+    boost_time: int,
+    boost_remaining: int,
+) -> None:
+    """Distinguish omitted arguments from supplied zero values."""
+    await radiator.activate_mode(HeatMode.BOOST, **arguments)
+
+    radiator._session.write_query.assert_awaited_once_with(
+        "home",
+        {"id_device": "2", "gv_mode": "4", "nv_mode": "4", **extra_payload},
+    )
+    assert radiator.temperatures[TempType.BOOST].celsius == target
+    assert radiator.temperatures[TempType.TARGET].celsius == target
+    assert radiator.boost_time == boost_time
+    assert radiator.boost_remaining == boost_remaining
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "arguments", "message"),
+    [
+        pytest.param(
+            HeatMode.BOOST,
+            {"temp_value": 0},
+            "Unit must be set when a temp value is provided.",
+            id="missing-unit",
+        ),
+        pytest.param(
+            HeatMode.OFF,
+            {"temp_value": 0, "temp_unit": TempUnit.CELSIUS},
+            "Temperature can not be set for Off.",
+            id="incompatible-temperature",
+        ),
+        pytest.param(
+            HeatMode.ECO,
+            {"boost_time": 0},
+            "Boost time can only be set for boost mode.",
+            id="incompatible-boost-time",
+        ),
+    ],
+)
+async def test_activation_zero_validation(
+    radiator: Radiator, mode: HeatMode, arguments: dict, message: str
+) -> None:
+    """Validate supplied zero values before writing or changing local state."""
+    before = vars(radiator).copy()
+    before["temperatures"] = radiator.temperatures.copy()
+
+    with pytest.raises(ApiError) as error:
+        await radiator.activate_mode(mode, **arguments)
+
+    assert str(error.value) == message
+    radiator._session.write_query.assert_not_awaited()
+    assert vars(radiator) == before
