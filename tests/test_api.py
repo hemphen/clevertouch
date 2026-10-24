@@ -166,3 +166,96 @@ async def test_automatic_refresh_failure_recovery(
     await api._ensure_valid_token()
 
     assert api.refresh_openid.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("replacement", "expected_token"),
+    [
+        pytest.param({}, "existing-refresh", id="omitted"),
+        pytest.param(
+            {"refresh_token": "rotated-refresh"}, "rotated-refresh", id="rotated"
+        ),
+    ],
+)
+async def test_refresh_token_replacement(
+    api: ApiSession,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: dict,
+    expected_token: str,
+) -> None:
+    """Retain an omitted refresh token and accept a supplied replacement."""
+    api.refresh_token = "existing-refresh"
+    monkeypatch.setattr("clevertouch.api.time.time", lambda: 1000)
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 200
+    response.json = AsyncMock(
+        return_value={
+            "access_token": "new-access",
+            "expires_in": 3600,
+            **replacement,
+        }
+    )
+
+    await api.refresh_openid()
+
+    assert api.refresh_token == expected_token
+    assert api.access_token == "new-access"
+    assert api.expires_at == 4600
+    api._http_session.post.assert_called_once_with(
+        api._token_url,
+        data={
+            "grant_type": "refresh_token",
+            "client_id": "app-front",
+            "refresh_token": "existing-refresh",
+        },
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        pytest.param(None, id="null"),
+        pytest.param("", id="empty"),
+        pytest.param(123, id="number"),
+        pytest.param({}, id="object"),
+    ],
+)
+async def test_invalid_refresh_token_preserves_credentials(
+    api: ApiSession, replacement: object
+) -> None:
+    """Reject malformed replacements without partially updating credentials."""
+    api.refresh_token = "existing-refresh"
+    api.access_token = "existing-access"
+    api.expires_at = 123
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 200
+    response.json = AsyncMock(
+        return_value={
+            "access_token": "new-access",
+            "refresh_token": replacement,
+            "expires_in": 3600,
+        }
+    )
+
+    with pytest.raises(ApiError, match="Invalid refresh token in token response"):
+        await api.refresh_openid()
+
+    assert api.refresh_token == "existing-refresh"
+    assert api.access_token == "existing-access"
+    assert api.expires_at == 123
+
+
+@pytest.mark.asyncio
+async def test_password_login_does_not_retain_refresh_token(api: ApiSession) -> None:
+    """A new password login must not inherit a previous account's token."""
+    api.refresh_token = "previous-account-refresh"
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 200
+    response.json = AsyncMock(return_value={"access_token": "new-account-access"})
+
+    await api.authenticate("offline@example.com", "offline-password")
+
+    assert api.refresh_token is None
+    assert api.access_token == "new-account-access"
