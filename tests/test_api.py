@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from json import JSONDecodeError
 from unittest.mock import AsyncMock, MagicMock
 
+from aiohttp import ClientResponseError
 import pytest
 
-from clevertouch.api import ApiCallError, ApiConnectError, ApiSession, ApiStatus
+from clevertouch.api import (
+    ApiAuthError,
+    ApiCallError,
+    ApiConnectError,
+    ApiSession,
+    ApiStatus,
+)
 from clevertouch.util import ApiError
 
 
@@ -343,3 +351,102 @@ async def test_transport_cancellation(
     assert api.access_token == "existing-access"
     assert api.refresh_token == "existing-refresh"
     assert api.expires_at == float("inf")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["_read", "_write"])
+@pytest.mark.parametrize(
+    ("status", "expected_type"),
+    [
+        pytest.param(401, ApiAuthError, id="unauthorized"),
+        pytest.param(500, ApiConnectError, id="server-error"),
+        pytest.param(400, ApiConnectError, id="bad-request"),
+        pytest.param(403, ApiConnectError, id="forbidden"),
+    ],
+)
+async def test_api_http_status(
+    api: ApiSession, operation: str, status: int, expected_type: type[ApiError]
+) -> None:
+    """Only HTTP 401 is classified as an API authentication failure."""
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = status
+    response.raise_for_status = MagicMock(
+        side_effect=ClientResponseError(
+            MagicMock(),
+            (),
+            status=status,
+            message="HTTP error",
+        )
+    )
+    response.json = AsyncMock()
+
+    with pytest.raises(expected_type) as error:
+        await getattr(api, operation)("test/", {})
+
+    assert type(error.value) is expected_type
+    response.json.assert_not_awaited()
+    assert api._http_session.post.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["authenticate", "refresh_openid"])
+@pytest.mark.parametrize(
+    ("status", "expected_type"),
+    [
+        pytest.param(400, ApiAuthError, id="bad-request"),
+        pytest.param(401, ApiAuthError, id="unauthorized"),
+        pytest.param(500, ApiError, id="server-error"),
+        pytest.param(403, ApiError, id="forbidden"),
+    ],
+)
+async def test_token_failure_logging(
+    api: ApiSession,
+    caplog: pytest.LogCaptureFixture,
+    operation: str,
+    status: int,
+    expected_type: type[ApiError],
+) -> None:
+    """Token failure logs apply to both grants without exposing response bodies."""
+    api.refresh_token = "private-refresh"
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = status
+    response.json = AsyncMock(return_value={"detail": "private-response"})
+    arguments = {
+        "authenticate": ("private@example.com", "private-password"),
+        "refresh_openid": (),
+    }
+
+    with caplog.at_level(logging.DEBUG, logger="clevertouch.api"):
+        with pytest.raises(expected_type):
+            await getattr(api, operation)(*arguments[operation])
+
+    assert f"Open ID token request failed ({status})" in caplog.messages
+    assert "private" not in caplog.text
+    response.json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["authenticate", "refresh_openid"])
+async def test_token_success_logging(
+    api: ApiSession, caplog: pytest.LogCaptureFixture, operation: str
+) -> None:
+    """Token success logs describe login and refresh accurately."""
+    api.refresh_token = "private-refresh"
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 200
+    response.json = AsyncMock(
+        return_value={
+            "access_token": "private-access",
+            "refresh_token": "private-rotated",
+        }
+    )
+    arguments = {
+        "authenticate": ("private@example.com", "private-password"),
+        "refresh_openid": (),
+    }
+
+    with caplog.at_level(logging.DEBUG, logger="clevertouch.api"):
+        await getattr(api, operation)(*arguments[operation])
+
+    assert "Open ID token request succeeded" in caplog.messages
+    assert "private" not in caplog.text
