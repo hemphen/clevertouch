@@ -157,8 +157,12 @@ class ApiSession:
                 f"Error connecting to {self._token_url}: {exc}"
             ) from exc
 
+        refresh_token = token_data.get("refresh_token", self.refresh_token)
+        if not isinstance(refresh_token, str) or not refresh_token:
+            raise ApiError("Invalid refresh token in token response")
+
         self.access_token = token_data["access_token"]
-        self.refresh_token = token_data.get("refresh_token")
+        self.refresh_token = refresh_token
         expires_in = token_data.get("expires_in", 3600)
         self.expires_at = time.time() + expires_in
 
