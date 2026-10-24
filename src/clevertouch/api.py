@@ -240,7 +240,7 @@ class ApiSession:
 
         return ApiResult(status, data, parameters)
 
-    async def _post(self, endpoint: str, payload: dict | None = None) -> dict:
+    async def _post(self, endpoint: str, payload: dict | None = None) -> ApiResult:
         """Make an authenticated API request"""
         await self._ensure_valid_token()
         headers = {
@@ -259,11 +259,7 @@ class ApiSession:
             _LOGGER.exception("API request failed: %s", exc)
             raise ApiConnectError(f"API request failed: {exc}") from exc
 
-        try:
-            result = self._parse_api_json(json_data)
-            _LOGGER.debug("%s called and parsed successfully", endpoint)
-        except Exception as ex:
-            _LOGGER.exception("Could not parse JSON result from API request")
-            result = None
+        result = self._parse_api_json(json_data)
+        _LOGGER.debug("%s called and parsed successfully", endpoint)
 
         return result
