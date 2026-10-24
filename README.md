@@ -44,29 +44,40 @@ There are available alternative implementations with unknown status of functiona
 
 ## Using the higher-level API
 
-See [samples/demo.py](https://github.com/hemphen/clevertouch/blob/samples/demo.py) for a basic but functional example of how to use the higher-level API.
+See [samples/demo.py](samples/demo.py) for a basic but functional example of how to use the higher-level API.
 
 ### The `Account` object
 
 | Methods | Description |
 | --- | --- |
-| `Account(**host)` | Create an `Account` object. Optionally specifying the host (including protocol), defaulting to https://e3.lvi.eu. |
+| `Account(email=None, token=None, *, host=None, session=None)` | Create an account. The host is a bare hostname, such as `e3.lvi.eu` (the default), without `https://` or a path. |
 | `authenticate(email, password)` | Authenticate with the service. |
 | `get_user()` | Returns a refreshable `User` object containing info about all available homes. |
 | `get_home(id)` | Returns a refreshable `Home` object for a home with the specific `id`. |
 | `get_homes()` | Returns a list of all homes registered with the user. |
 
+Getters cache successfully fetched user and home objects. Call `await user.refresh()`
+or `await home.refresh()` to fetch current data; repeated getters reuse the cached
+objects. Successful password authentication clears both account caches.
+
+Use `await account.authenticate(email, password)` for password login, or create
+`Account(email, token=refresh_token)` to use a stored refresh token. Access tokens
+are refreshed automatically when expired, on the next API request. The server may
+rotate the refresh token; persist the latest `account.api.refresh_token` after
+operations that can refresh it, even if a subsequent data request fails. The
+library does not persist tokens for you.
+
 ### The `User` object
 | Properties/Methods | Description |
 | --- | --- |
-| `homes` | Dictionary containing id and basic information about all available homes. |
+| `homes` | Dictionary mapping home IDs to `HomeInfo` objects. |
 | `refresh()` | Refreshes the data from the cloud account. |
 
 ### The `Home` object
 | Properties/Methods | Description |
 | --- | --- |
 | `info` | Provides an object with basic info about the home. |  
-| `devices` | A list with all available devices. |
+| `devices` | Dictionary mapping device IDs to device objects. |
 | `refresh()` | Refreshes the data from the cloud account. |
 
 ### The `Radiator` object
@@ -85,7 +96,7 @@ See [samples/demo.py](https://github.com/hemphen/clevertouch/blob/samples/demo.p
 
 | Methods | Description |
 | --- | --- |
-| `ApiSession()` | Create an API session. |
+| `ApiSession(email=None, refresh_token=None, *, host=None, manufacturer=None, session=None)` | Create an API session. Use a bare hostname for `host`; the default is `e3.lvi.eu`. |
 | `authenticate(email, password)` | Authenticate with the service. |
 | `read_user_data()` | Return unparsed data about the user associated with the account. |
 | `read_home_data(id)` | Return unparsed data about the home with the specified id. |
