@@ -94,3 +94,13 @@ See [samples/demo.py](https://github.com/hemphen/clevertouch/blob/samples/demo.p
 ## Integrations
 
 This API was primarily written to be able to integrate Touch E3-radiators in Home Assistant, see https://github.com/hemphen/hass-clevertouch.
+
+## Testing
+
+Install the library and test dependencies with
+`python3 -m pip install . pytest pytest-asyncio python-dotenv`, then run
+`python3 -m pytest`. Live account tests are skipped by default.
+
+To run live tests explicitly, configure `CLEVERTOUCH_EMAIL` and
+`CLEVERTOUCH_PASSWORD` in the environment or `.env`, then run
+`python3 -m pytest --live -m live`.

@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 
 from clevertouch import Account
 
+pytestmark = pytest.mark.live
+
 load_dotenv()
 
 EMAIL: str = os.getenv("CLEVERTOUCH_EMAIL", "")

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from aiohttp import ClientResponseError
 import pytest
+import pytest_asyncio
 
 from clevertouch.api import (
     ApiAuthError,
@@ -20,8 +21,8 @@ from clevertouch.api import (
 from clevertouch.util import ApiError
 
 
-@pytest.fixture
-def api() -> ApiSession:
+@pytest_asyncio.fixture
+async def api() -> ApiSession:
     """Create an API session with a mocked HTTP transport and valid token."""
     session = MagicMock()
     api = ApiSession(session=session)
