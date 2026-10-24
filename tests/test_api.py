@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from json import JSONDecodeError
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from clevertouch.api import ApiCallError, ApiSession, ApiStatus
+from clevertouch.api import ApiCallError, ApiConnectError, ApiSession, ApiStatus
 from clevertouch.util import ApiError
 
 
@@ -259,3 +260,86 @@ async def test_password_login_does_not_retain_refresh_token(api: ApiSession) -> 
 
     assert api.refresh_token is None
     assert api.access_token == "new-account-access"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "operation", ["authenticate", "refresh_openid", "read_user_data"]
+)
+@pytest.mark.parametrize(
+    ("failure_target", "failure", "expected_type"),
+    [
+        pytest.param(
+            "request", asyncio.TimeoutError(), ApiConnectError, id="request-timeout"
+        ),
+        pytest.param(
+            "json", asyncio.TimeoutError(), ApiConnectError, id="body-timeout"
+        ),
+        pytest.param(
+            "json", JSONDecodeError("Invalid JSON", "?", 0), ApiError, id="invalid-json"
+        ),
+    ],
+)
+async def test_transport_failure(
+    api: ApiSession,
+    operation: str,
+    failure_target: str,
+    failure: Exception,
+    expected_type: type[ApiError],
+) -> None:
+    """Normalize transport failures and leave existing credentials unchanged."""
+    api.access_token = "existing-access"
+    api.refresh_token = "existing-refresh"
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 200
+    response.raise_for_status = MagicMock()
+    response.json = AsyncMock()
+    targets = {"request": api._http_session.post, "json": response.json}
+    targets[failure_target].side_effect = failure
+    arguments = {
+        "authenticate": ("offline@example.com", "offline-password"),
+        "refresh_openid": (),
+        "read_user_data": (),
+    }
+
+    with pytest.raises(expected_type) as error:
+        await getattr(api, operation)(*arguments[operation])
+
+    assert type(error.value) is expected_type
+    assert error.value.__cause__ is failure
+    assert api.access_token == "existing-access"
+    assert api.refresh_token == "existing-refresh"
+    assert api.expires_at == float("inf")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "operation", ["authenticate", "refresh_openid", "read_user_data"]
+)
+@pytest.mark.parametrize("failure_target", ["request", "json"])
+async def test_transport_cancellation(
+    api: ApiSession, operation: str, failure_target: str
+) -> None:
+    """Cancellation propagates unchanged without modifying credentials."""
+    api.access_token = "existing-access"
+    api.refresh_token = "existing-refresh"
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 200
+    response.raise_for_status = MagicMock()
+    response.json = AsyncMock()
+    cancellation = asyncio.CancelledError()
+    targets = {"request": api._http_session.post, "json": response.json}
+    targets[failure_target].side_effect = cancellation
+    arguments = {
+        "authenticate": ("offline@example.com", "offline-password"),
+        "refresh_openid": (),
+        "read_user_data": (),
+    }
+
+    with pytest.raises(asyncio.CancelledError) as error:
+        await getattr(api, operation)(*arguments[operation])
+
+    assert error.value is cancellation
+    assert api.access_token == "existing-access"
+    assert api.refresh_token == "existing-refresh"
+    assert api.expires_at == float("inf")
