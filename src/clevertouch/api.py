@@ -130,16 +130,16 @@ class ApiSession:
 
     async def _async_get_token_data(self, response) -> dict:
         if response.status == 200:
-            _LOGGER.debug("Refreshed token successfully")
+            _LOGGER.debug("Open ID token request succeeded")
             return await response.json()
         if response.status==400 or response.status == 401:
-            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            _LOGGER.error("Open ID token request failed (%s)", response.status)
             raise ApiAuthError("Unauthorized.")
         elif response.status == 500:
-            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            _LOGGER.error("Open ID token request failed (%s)", response.status)
             raise ApiError("Internal Server Error.")
         else:
-            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            _LOGGER.error("Open ID token request failed (%s)", response.status)
             raise ApiError(f"Unknown error ({response.status}).")
 
     async def refresh_openid(self) -> None:
@@ -266,6 +266,8 @@ class ApiSession:
             async with self._http_session.post(
                 url, data=payload or {}, headers=headers
             ) as resp:
+                if resp.status == 401:
+                    raise ApiAuthError("Unauthorized.")
                 resp.raise_for_status()
                 json_data = await resp.json()
         except JSONDecodeError as exc:
