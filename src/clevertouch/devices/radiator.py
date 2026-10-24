@@ -257,11 +257,14 @@ class Radiator(Device):
 
         if heat_mode not in self._HEAT_MODE_TO_DEVICE:
             raise ApiError(f"Heating mode {heat_mode} not available.")
-        if temp_value and not temp_unit:
+        if temp_value is not None and not temp_unit:
             raise ApiError("Unit must be set when a temp value is provided.")
-        if temp_value and heat_mode not in self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE:
+        if (
+            temp_value is not None
+            and heat_mode not in self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE
+        ):
             raise ApiError(f"Temperature can not be set for {heat_mode}.")
-        if boost_time and heat_mode != HeatMode.BOOST:
+        if boost_time is not None and heat_mode != HeatMode.BOOST:
             raise ApiError("Boost time can only be set for boost mode.")
 
         query_params = {}
@@ -269,25 +272,25 @@ class Radiator(Device):
         query_params["gv_mode"] = self._HEAT_MODE_TO_DEVICE[heat_mode]
         query_params["nv_mode"] = self._HEAT_MODE_TO_DEVICE[heat_mode]
 
-        if temp_value and temp_unit:
+        if temp_value is not None and temp_unit:
             temp_type = self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE[heat_mode]
             new_temp = Temperature(
                 temp_value, temp_unit, is_writable=True, name=temp_type
             )
             query_params[self._TEMP_TYPE_TO_DEVICE[temp_type]] = new_temp.device
 
-        if boost_time:
+        if boost_time is not None:
             query_params["time_boost"] = boost_time
 
         await self._session.write_query(self.home.home_id, query_params)
 
-        if temp_value and temp_unit:
+        if temp_value is not None and temp_unit:
             # Debatable - see set_temperature
             self.temperatures[temp_type] = new_temp
 
         self._update_heat_mode(heat_mode)
 
-        if boost_time:
+        if boost_time is not None:
             # Debatable - see set_temperature
             self.boost_time = boost_time
             self.boost_remaining = boost_time
