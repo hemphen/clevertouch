@@ -1,5 +1,7 @@
 """Offline regression tests for radiator commands."""
 
+from __future__ import annotations
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
@@ -112,3 +114,72 @@ async def test_activation_success(radiator: Radiator) -> None:
     assert radiator.temperatures[TempType.TARGET].celsius == 25
     assert radiator.boost_time == 600
     assert radiator.boost_remaining == 600
+    assert radiator.heat_mode == HeatMode.BOOST
+    assert radiator.temp_type == TempType.BOOST
+    target = radiator.temperatures[TempType.TARGET]
+    preset = radiator.temperatures[TempType.BOOST]
+    assert target is not preset
+    assert target.name == TempType.TARGET
+    assert target.is_writable is False
+    assert preset.name == TempType.BOOST
+    assert preset.is_writable is True
+    assert radiator.active is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["set_heat_mode", "activate_mode"])
+@pytest.mark.parametrize(
+    ("initial_mode", "mode", "temp_type", "target", "device_mode"),
+    [
+        pytest.param(
+            HeatMode.COMFORT, HeatMode.ECO, TempType.ECO, 15, "3", id="comfort-to-eco"
+        ),
+        pytest.param(
+            HeatMode.ECO, HeatMode.OFF, TempType.NONE, None, "1", id="eco-to-off"
+        ),
+        pytest.param(
+            HeatMode.COMFORT, HeatMode.PROGRAM, TempType.ECO, 15, "11", id="program"
+        ),
+    ],
+)
+async def test_mode_change_state(
+    radiator: Radiator,
+    operation: str,
+    initial_mode: HeatMode,
+    mode: HeatMode,
+    temp_type: TempType,
+    target: float | None,
+    device_mode: str,
+) -> None:
+    """Accepted mode commands expose a consistent local mode and target."""
+    await radiator.set_heat_mode(initial_mode)
+    radiator._session.write_query.reset_mock()
+
+    await getattr(radiator, operation)(mode)
+
+    radiator._session.write_query.assert_awaited_once_with(
+        "home", {"id_device": "2", "gv_mode": device_mode, "nv_mode": device_mode}
+    )
+    assert radiator.heat_mode == mode
+    assert radiator.temp_type == temp_type
+    assert radiator.temperatures[TempType.TARGET].celsius == target
+    assert radiator.temperatures[TempType.TARGET].name == TempType.TARGET
+    assert radiator.temperatures[TempType.TARGET].is_writable is False
+    assert radiator.active is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["set_heat_mode", "activate_mode"])
+@pytest.mark.parametrize("error_type", [ApiError, asyncio.CancelledError])
+async def test_mode_change_failure(
+    radiator: Radiator, operation: str, error_type: type[BaseException]
+) -> None:
+    """Rejected or cancelled mode commands preserve local state."""
+    before = vars(radiator).copy()
+    before["temperatures"] = radiator.temperatures.copy()
+    radiator._session.write_query.side_effect = error_type()
+
+    with pytest.raises(error_type):
+        await getattr(radiator, operation)(HeatMode.ECO)
+
+    assert vars(radiator) == before
