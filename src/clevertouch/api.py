@@ -1,6 +1,7 @@
 """Interface to the cloud API."""
 
 from __future__ import annotations
+import asyncio
 import logging
 from typing import Optional, NamedTuple, Any
 from hashlib import md5
@@ -81,6 +82,7 @@ class ApiSession:
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = refresh_token
         self.expires_at: float = 0.0
+        self._refresh_lock = asyncio.Lock()
 
     async def __aenter__(self) -> "ApiSession":
         if self._http_session is None:
@@ -163,7 +165,9 @@ class ApiSession:
     async def _ensure_valid_token(self) -> None:
         """Refresh if our token is expired (simple check)."""
         if time.time() >= self.expires_at:
-            await self.refresh_openid()
+            async with self._refresh_lock:
+                if time.time() >= self.expires_at:
+                    await self.refresh_openid()
 
     async def _read(
         self,
