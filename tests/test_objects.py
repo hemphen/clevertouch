@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -157,6 +159,75 @@ async def test_failed_authentication_preserves_caches(account: Account) -> None:
     assert await account.get_home("home") is home
     account.api.read_user_data.assert_awaited_once_with()
     account.api.read_home_data.assert_awaited_once_with("home")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("getter", "arguments", "read_method"),
+    [
+        pytest.param("get_user", (), "read_user_data", id="user"),
+        pytest.param("get_home", ("home",), "read_home_data", id="home"),
+    ],
+)
+async def test_old_fetch_cannot_repopulate_caches(
+    account: Account, getter: str, arguments: tuple, read_method: str
+) -> None:
+    """A fetch started before reauthentication cannot be cached afterwards."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+    read = getattr(account.api, read_method)
+
+    async def delayed_read(*args: str) -> dict:
+        started.set()
+        await release.wait()
+        return read.return_value
+
+    read.side_effect = delayed_read
+    task = asyncio.create_task(getattr(account, getter)(*arguments))
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        account.api.email = "second@example.com"
+        await account.authenticate("second@example.com", "offline-password")
+        release.set()
+        with pytest.raises(ApiError, match="Account changed during"):
+            await asyncio.wait_for(task, 5)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert account.user is None
+    assert account.homes == {}
+    read.side_effect = None
+    fresh = await getattr(account, getter)(*arguments)
+    assert await getattr(account, getter)(*arguments) is fresh
+    assert read.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("getter", "arguments", "read_method"),
+    [
+        pytest.param("get_user", (), "read_user_data", id="user"),
+        pytest.param("get_home", ("home",), "read_home_data", id="home"),
+    ],
+)
+async def test_concurrent_getters_share_cached_identity(
+    account: Account, getter: str, arguments: tuple, read_method: str
+) -> None:
+    """Concurrent initial fetches return the same cached object."""
+    read = getattr(account.api, read_method)
+
+    async def delayed_read(*args: str) -> dict:
+        await asyncio.sleep(0)
+        return read.return_value
+
+    read.side_effect = delayed_read
+    first, second = await asyncio.gather(
+        getattr(account, getter)(*arguments), getattr(account, getter)(*arguments)
+    )
+
+    assert first is second
+    assert await getattr(account, getter)(*arguments) is first
 
 
 @pytest.mark.asyncio
