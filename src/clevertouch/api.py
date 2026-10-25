@@ -83,7 +83,7 @@ class ApiSession:
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = refresh_token
         self.expires_at: float = 0.0
-        self._refresh_lock = asyncio.Lock()
+        self._refresh_lock: Optional[asyncio.Lock] = None
 
     async def __aenter__(self) -> "ApiSession":
         if self._http_session is None:
@@ -174,6 +174,8 @@ class ApiSession:
     async def _ensure_valid_token(self) -> None:
         """Refresh if our token is expired (simple check)."""
         if time.time() >= self.expires_at:
+            if self._refresh_lock is None:
+                self._refresh_lock = asyncio.Lock()
             async with self._refresh_lock:
                 if time.time() >= self.expires_at:
                     await self.refresh_openid()
