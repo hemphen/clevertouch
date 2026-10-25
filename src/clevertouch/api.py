@@ -6,6 +6,7 @@ import logging
 from typing import Optional, NamedTuple, Any
 from hashlib import md5
 from json import JSONDecodeError
+from math import isfinite
 from aiohttp import ClientSession, ClientConnectionError, ClientError
 import time
 
@@ -103,8 +104,6 @@ class ApiSession:
         """Authenticate with the cloud API.
         On success, sets self.access_token, self.refresh_token, self.expires_at.
         """
-        self.email = email
-
         data = {
             "grant_type": "password",
             "client_id": self.CLIENT_ID,
@@ -123,10 +122,35 @@ class ApiSession:
                 f"Error connecting to {self._token_url}: {exc}"
             ) from exc
 
-        self.access_token = token_data["access_token"]
+        access_token, expires_at = self._parse_token_data(token_data, 300)
+        self.access_token = access_token
         self.refresh_token = token_data.get("refresh_token")
-        expires_in = token_data.get("expires_in", 300)  # default 5 min
-        self.expires_at = time.time() + expires_in
+        self.expires_at = expires_at
+        self.email = email
+
+    def _parse_token_data(
+        self, token_data: dict, default_expires_in: int
+    ) -> tuple[str, float]:
+        """Validate access token and expiry before updating credentials."""
+        if not isinstance(token_data, dict):
+            raise ApiError("Invalid token response")
+        access_token = token_data.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise ApiError("Invalid access token in token response")
+        expires_in = token_data.get("expires_in", default_expires_in)
+        if (
+            not isinstance(expires_in, (int, float))
+            or isinstance(expires_in, bool)
+            or expires_in < 0
+        ):
+            raise ApiError("Invalid expiry in token response")
+        try:
+            expires_at = time.time() + expires_in
+        except OverflowError as exc:
+            raise ApiError("Invalid expiry in token response") from exc
+        if not isfinite(expires_at):
+            raise ApiError("Invalid expiry in token response")
+        return access_token, expires_at
 
     async def _async_get_token_data(self, response) -> dict:
         if response.status == 200:
@@ -162,14 +186,14 @@ class ApiSession:
                 f"Error connecting to {self._token_url}: {exc}"
             ) from exc
 
+        access_token, expires_at = self._parse_token_data(token_data, 3600)
         refresh_token = token_data.get("refresh_token", self.refresh_token)
         if not isinstance(refresh_token, str) or not refresh_token:
             raise ApiError("Invalid refresh token in token response")
 
-        self.access_token = token_data["access_token"]
+        self.access_token = access_token
         self.refresh_token = refresh_token
-        expires_in = token_data.get("expires_in", 3600)
-        self.expires_at = time.time() + expires_in
+        self.expires_at = expires_at
 
     async def _ensure_valid_token(self) -> None:
         """Refresh if our token is expired (simple check)."""
