@@ -13,6 +13,7 @@ import pytest_asyncio
 
 from clevertouch.api import (
     ApiAuthError,
+    ApiAccessTokenError,
     ApiCallError,
     ApiConnectError,
     ApiSession,
@@ -359,7 +360,7 @@ async def test_transport_cancellation(
 @pytest.mark.parametrize(
     ("status", "expected_type"),
     [
-        pytest.param(401, ApiAuthError, id="unauthorized"),
+        pytest.param(401, ApiAccessTokenError, id="unauthorized"),
         pytest.param(500, ApiConnectError, id="server-error"),
         pytest.param(400, ApiConnectError, id="bad-request"),
         pytest.param(403, ApiConnectError, id="forbidden"),
@@ -544,3 +545,62 @@ async def test_invalid_token_response_is_atomic(
         "existing-refresh",
         123,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["_read", "_write"])
+async def test_resource_401_refreshes_on_next_request(
+    api: ApiSession, operation: str
+) -> None:
+    """An access-token rejection fails once; the next operation refreshes it."""
+    api.access_token = "old-access"
+    api.refresh_token = "existing-refresh"
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 401
+    response.raise_for_status = MagicMock()
+    response.json = AsyncMock(
+        return_value={
+            "code": {"code": "8", "key": "ok", "value": "OK"},
+            "data": {},
+        }
+    )
+
+    async def refresh() -> None:
+        api.access_token = "new-access"
+        api.expires_at = float("inf")
+
+    api.refresh_openid = AsyncMock(side_effect=refresh)
+    with pytest.raises(ApiAccessTokenError):
+        await getattr(api, operation)("test/", {})
+
+    assert api._http_session.post.call_count == 1
+    api.refresh_openid.assert_not_awaited()
+    assert api.refresh_token == "existing-refresh"
+    response.status = 200
+
+    await getattr(api, operation)("test/", {})
+
+    api.refresh_openid.assert_awaited_once_with()
+    assert api._http_session.post.call_count == 2
+    assert api._http_session.post.call_args.kwargs["headers"] == {
+        "Authorization": "Bearer new-access"
+    }
+
+
+@pytest.mark.asyncio
+async def test_old_resource_401_does_not_expire_new_token(api: ApiSession) -> None:
+    """A late rejection of an older token must not invalidate a newer refresh."""
+    api.access_token = "old-access"
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 401
+
+    async def response_after_refresh() -> MagicMock:
+        api.access_token = "new-access"
+        return response
+
+    api._http_session.post.return_value.__aenter__.side_effect = response_after_refresh
+    with pytest.raises(ApiAccessTokenError):
+        await api.read_user_data()
+
+    assert api.access_token == "new-access"
+    assert api.expires_at == float("inf")
