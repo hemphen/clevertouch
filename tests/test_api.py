@@ -484,3 +484,63 @@ def test_injected_session_created_on_another_loop() -> None:
         request_loop.close()
         constructor_loop.close()
         asyncio.set_event_loop(None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["authenticate", "refresh_openid"])
+@pytest.mark.parametrize(
+    "token_data",
+    [
+        pytest.param([], id="invalid-envelope"),
+        pytest.param({}, id="missing-access-token"),
+        pytest.param({"access_token": None}, id="null-access-token"),
+        pytest.param({"access_token": ""}, id="empty-access-token"),
+        pytest.param(
+            {"access_token": "new-access", "expires_in": "bad"}, id="string-expiry"
+        ),
+        pytest.param(
+            {"access_token": "new-access", "expires_in": None}, id="null-expiry"
+        ),
+        pytest.param(
+            {"access_token": "new-access", "expires_in": -1}, id="negative-expiry"
+        ),
+        pytest.param(
+            {"access_token": "new-access", "expires_in": True}, id="boolean-expiry"
+        ),
+        pytest.param(
+            {"access_token": "new-access", "expires_in": float("nan")}, id="nan-expiry"
+        ),
+        pytest.param(
+            {"access_token": "new-access", "expires_in": float("inf")},
+            id="infinite-expiry",
+        ),
+        pytest.param(
+            {"access_token": "new-access", "expires_in": 10**400}, id="overflow-expiry"
+        ),
+    ],
+)
+async def test_invalid_token_response_is_atomic(
+    api: ApiSession, operation: str, token_data: object
+) -> None:
+    """Malformed successful responses cannot partly replace credentials or identity."""
+    api.email = "first@example.com"
+    api.access_token = "existing-access"
+    api.refresh_token = "existing-refresh"
+    api.expires_at = 123
+    response = api._http_session.post.return_value.__aenter__.return_value
+    response.status = 200
+    response.json = AsyncMock(return_value=token_data)
+    arguments = {
+        "authenticate": ("second@example.com", "offline-password"),
+        "refresh_openid": (),
+    }
+
+    with pytest.raises(ApiError):
+        await getattr(api, operation)(*arguments[operation])
+
+    assert (api.email, api.access_token, api.refresh_token, api.expires_at) == (
+        "first@example.com",
+        "existing-access",
+        "existing-refresh",
+        123,
+    )

@@ -8,6 +8,7 @@ import pytest
 
 from clevertouch.objects import Account
 from clevertouch.util import ApiError
+from clevertouch.api import ApiAuthError
 
 
 @pytest.fixture
@@ -156,3 +157,35 @@ async def test_failed_authentication_preserves_caches(account: Account) -> None:
     assert await account.get_home("home") is home
     account.api.read_user_data.assert_awaited_once_with()
     account.api.read_home_data.assert_awaited_once_with("home")
+
+
+@pytest.mark.asyncio
+async def test_failed_login_preserves_api_identity() -> None:
+    """Check real API authentication and the identity used by subsequent reads."""
+    session = MagicMock()
+    account = Account("first@example.com", session=session)
+    account.api.access_token = "existing-access"
+    account.api.refresh_token = "existing-refresh"
+    account.api.expires_at = float("inf")
+    response = session.post.return_value.__aenter__.return_value
+    response.status = 200
+    response.raise_for_status = MagicMock()
+    response.json = AsyncMock(
+        return_value={
+            "code": {"code": "1", "key": "ok", "value": "OK"},
+            "data": {"user_id": "first-user", "smarthomes": []},
+        }
+    )
+    user = await account.get_user()
+    response.status = 401
+
+    with pytest.raises(ApiAuthError):
+        await account.authenticate("second@example.com", "offline-password")
+
+    assert account.email == account.api.email == "first@example.com"
+    assert account.user is user
+    assert account.api.access_token == "existing-access"
+    assert account.api.refresh_token == "existing-refresh"
+    response.status = 200
+    await user.refresh()
+    assert session.post.call_args.kwargs["data"] == {"email": "first@example.com"}
