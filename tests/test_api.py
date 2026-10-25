@@ -7,7 +7,7 @@ import logging
 from json import JSONDecodeError
 from unittest.mock import AsyncMock, MagicMock
 
-from aiohttp import ClientResponseError
+from aiohttp import ClientResponseError, ClientSession
 import pytest
 import pytest_asyncio
 
@@ -451,3 +451,36 @@ async def test_token_success_logging(
 
     assert "Open ID token request succeeded" in caplog.messages
     assert "private" not in caplog.text
+
+
+def test_injected_session_created_on_another_loop() -> None:
+    """A synchronous wrapper uses the HTTP session's running loop on Python 3.8."""
+    constructor_loop = asyncio.new_event_loop()
+    request_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(constructor_loop)
+
+    async def create_session() -> ClientSession:
+        return ClientSession()
+
+    session = request_loop.run_until_complete(create_session())
+    try:
+        api = ApiSession(session=session)
+
+        async def refresh() -> None:
+            await asyncio.sleep(0)
+            api.expires_at = float("inf")
+
+        api.refresh_openid = AsyncMock(side_effect=refresh)
+
+        async def requests() -> None:
+            await asyncio.gather(api._ensure_valid_token(), api._ensure_valid_token())
+
+        request_loop.run_until_complete(requests())
+        api.refresh_openid.assert_awaited_once_with()
+        request_loop.run_until_complete(api.close())
+        assert not session.closed
+    finally:
+        request_loop.run_until_complete(session.close())
+        request_loop.close()
+        constructor_loop.close()
+        asyncio.set_event_loop(None)
