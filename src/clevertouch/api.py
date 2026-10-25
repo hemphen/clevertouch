@@ -161,13 +161,13 @@ class ApiSession:
             _LOGGER.debug("Open ID token request succeeded")
             return await response.json()
         if response.status==400 or response.status == 401:
-            _LOGGER.error("Open ID token request failed (%s)", response.status)
+            _LOGGER.debug("Open ID token request failed (%s)", response.status)
             raise ApiAuthError("Unauthorized.")
         elif response.status == 500:
-            _LOGGER.error("Open ID token request failed (%s)", response.status)
+            _LOGGER.debug("Open ID token request failed (%s)", response.status)
             raise ApiError("Internal Server Error.")
         else:
-            _LOGGER.error("Open ID token request failed (%s)", response.status)
+            _LOGGER.debug("Open ID token request failed (%s)", response.status)
             raise ApiError(f"Unknown error ({response.status}).")
 
     async def refresh_openid(self) -> None:
@@ -306,7 +306,7 @@ class ApiSession:
         except JSONDecodeError as exc:
             raise ApiError("Invalid JSON in API response") from exc
         except (ClientError, asyncio.TimeoutError) as exc:
-            _LOGGER.exception("API request failed: %s", exc)
+            _LOGGER.debug("API request failed: %s", exc)
             raise ApiConnectError(f"API request failed: {exc}") from exc
 
         result = self._parse_api_json(json_data)
