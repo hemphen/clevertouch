@@ -25,6 +25,7 @@ class Account:
         self.email: Optional[str] = email
         self.user: Optional[User] = None
         self.homes: dict[str, Home] = {}
+        self._auth_generation = 0
 
     async def __aenter__(self):
         return self
@@ -44,6 +45,7 @@ class Account:
         """Authenticate with the cloud API and store credentials."""
         await self.api.authenticate(email, password)
         self.email = self.api.email
+        self._auth_generation += 1
         self.user = None
         self.homes.clear()
 
@@ -57,18 +59,26 @@ class Account:
         if user is None:
             if self.email is None:
                 raise ApiError("no email specified")
+            generation = self._auth_generation
             user = User(self.api, self.email)
             await user.refresh()
-            self.user = user
+            if generation != self._auth_generation:
+                raise ApiError("Account changed during user fetch")
+            if self.user is None:
+                self.user = user
+            user = self.user
         return user
 
     async def get_home(self, home_id: str) -> Home:
         """Get cached home information; call Home.refresh() for fresh data."""
         home = self.homes.get(home_id)
         if home is None:
+            generation = self._auth_generation
             home = Home(self.api, home_id)
             await home.refresh()
-            self.homes[home_id] = home
+            if generation != self._auth_generation:
+                raise ApiError("Account changed during home fetch")
+            home = self.homes.setdefault(home_id, home)
         return home
 
     async def get_homes(self) -> list[Home]:

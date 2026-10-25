@@ -58,7 +58,9 @@ See [samples/demo.py](samples/demo.py) for a basic but functional example of how
 
 Getters cache successfully fetched user and home objects. Call `await user.refresh()`
 or `await home.refresh()` to fetch current data; repeated getters reuse the cached
-objects. Successful password authentication clears both account caches.
+objects. Successful password authentication clears both account caches. A getter
+still fetching data for the previous login raises `ApiError` instead of caching
+that response.
 
 Use `await account.authenticate(email, password)` for password login, or create
 `Account(email, token=refresh_token)` to use a stored refresh token. Access tokens
