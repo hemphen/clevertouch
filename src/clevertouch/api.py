@@ -49,6 +49,10 @@ class ApiAuthError(ApiError):
     """Exception raised on authentication errors when calling the cloud API."""
 
 
+class ApiAccessTokenError(ApiAuthError):
+    """Access token rejected; the next request will refresh it."""
+
+
 class ApiConnectError(ApiError):
     """Exception raised on connection errors when calling the cloud API."""
 
@@ -282,8 +286,9 @@ class ApiSession:
     async def _post(self, endpoint: str, payload: dict | None = None) -> ApiResult:
         """Make an authenticated API request"""
         await self._ensure_valid_token()
+        access_token = self.access_token
         headers = {
-            "Authorization": f"Bearer {self.access_token}",
+            "Authorization": f"Bearer {access_token}",
         }
 
         url = f"{self._api_base}{endpoint.lstrip('/')}"
@@ -293,7 +298,9 @@ class ApiSession:
                 url, data=payload or {}, headers=headers
             ) as resp:
                 if resp.status == 401:
-                    raise ApiAuthError("Unauthorized.")
+                    if self.access_token == access_token:
+                        self.expires_at = 0.0
+                    raise ApiAccessTokenError("Access token rejected.")
                 resp.raise_for_status()
                 json_data = await resp.json()
         except JSONDecodeError as exc:

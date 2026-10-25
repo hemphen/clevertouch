@@ -69,6 +69,11 @@ rotate the refresh token; persist the latest `account.api.refresh_token` after
 operations that can refresh it, even if a subsequent data request fails. The
 library does not persist tokens for you.
 
+An API HTTP 401 raises `ApiAccessTokenError` (a subclass of `ApiAuthError`) and
+marks the rejected access token for refresh on the next request. The failed
+operation is not replayed. Handle this separately from login or refresh-grant
+`ApiAuthError`, which requires checking credentials.
+
 ### The `User` object
 | Properties/Methods | Description |
 | --- | --- |
