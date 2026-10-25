@@ -424,6 +424,7 @@ async def test_token_failure_logging(
 
     assert f"Open ID token request failed ({status})" in caplog.messages
     assert "private" not in caplog.text
+    assert all(record.levelno < logging.WARNING for record in caplog.records)
     response.json.assert_not_awaited()
 
 
