@@ -10,7 +10,7 @@ dev = [
 
 [project]
 name = "clevertouch"
-version = "0.5.0"
+version = "0.6.0b1"
 description = "A Python API for interacting with LVI/Purmo Touch E3-connected radiators"
 keywords = [
     "LVI", 
@@ -44,3 +44,4 @@ build-backend = "pdm.pep517.api"
 [tool.pytest.ini_options]
 log_cli = 1
 log_cli_level = "DEBUG"
+markers = ["live: tests requiring a live account and vendor API access"]

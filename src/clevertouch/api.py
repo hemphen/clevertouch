@@ -1,9 +1,12 @@
 """Interface to the cloud API."""
 
 from __future__ import annotations
+import asyncio
 import logging
 from typing import Optional, NamedTuple, Any
 from hashlib import md5
+from json import JSONDecodeError
+from math import isfinite
 from aiohttp import ClientSession, ClientConnectionError, ClientError
 import time
 
@@ -46,6 +49,10 @@ class ApiAuthError(ApiError):
     """Exception raised on authentication errors when calling the cloud API."""
 
 
+class ApiAccessTokenError(ApiAuthError):
+    """Access token rejected; the next request will refresh it."""
+
+
 class ApiConnectError(ApiError):
     """Exception raised on connection errors when calling the cloud API."""
 
@@ -81,6 +88,7 @@ class ApiSession:
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = refresh_token
         self.expires_at: float = 0.0
+        self._refresh_lock: Optional[asyncio.Lock] = None
 
     async def __aenter__(self) -> "ApiSession":
         if self._http_session is None:
@@ -100,8 +108,6 @@ class ApiSession:
         """Authenticate with the cloud API.
         On success, sets self.access_token, self.refresh_token, self.expires_at.
         """
-        self.email = email
-
         data = {
             "grant_type": "password",
             "client_id": self.CLIENT_ID,
@@ -113,28 +119,55 @@ class ApiSession:
             _LOGGER.debug("Login using password")
             async with self._http_session.post(self._token_url, data=data) as response:
                 token_data = await self._async_get_token_data(response)
-        except ClientError as exc:
+        except JSONDecodeError as exc:
+            raise ApiError("Invalid JSON in token response") from exc
+        except (ClientError, asyncio.TimeoutError) as exc:
             raise ApiConnectError(
                 f"Error connecting to {self._token_url}: {exc}"
             ) from exc
 
-        self.access_token = token_data["access_token"]
+        access_token, expires_at = self._parse_token_data(token_data, 300)
+        self.access_token = access_token
         self.refresh_token = token_data.get("refresh_token")
-        expires_in = token_data.get("expires_in", 300)  # default 5 min
-        self.expires_at = time.time() + expires_in
+        self.expires_at = expires_at
+        self.email = email
+
+    def _parse_token_data(
+        self, token_data: dict, default_expires_in: int
+    ) -> tuple[str, float]:
+        """Validate access token and expiry before updating credentials."""
+        if not isinstance(token_data, dict):
+            raise ApiError("Invalid token response")
+        access_token = token_data.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise ApiError("Invalid access token in token response")
+        expires_in = token_data.get("expires_in", default_expires_in)
+        if (
+            not isinstance(expires_in, (int, float))
+            or isinstance(expires_in, bool)
+            or expires_in < 0
+        ):
+            raise ApiError("Invalid expiry in token response")
+        try:
+            expires_at = time.time() + expires_in
+        except OverflowError as exc:
+            raise ApiError("Invalid expiry in token response") from exc
+        if not isfinite(expires_at):
+            raise ApiError("Invalid expiry in token response")
+        return access_token, expires_at
 
     async def _async_get_token_data(self, response) -> dict:
         if response.status == 200:
-            _LOGGER.debug("Refreshed token successfully")
+            _LOGGER.debug("Open ID token request succeeded")
             return await response.json()
         if response.status==400 or response.status == 401:
-            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            _LOGGER.debug("Open ID token request failed (%s)", response.status)
             raise ApiAuthError("Unauthorized.")
         elif response.status == 500:
-            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            _LOGGER.debug("Open ID token request failed (%s)", response.status)
             raise ApiError("Internal Server Error.")
         else:
-            _LOGGER.error("Open ID refresh failed (%s)", response.status)
+            _LOGGER.debug("Open ID token request failed (%s)", response.status)
             raise ApiError(f"Unknown error ({response.status}).")
 
     async def refresh_openid(self) -> None:
@@ -150,20 +183,30 @@ class ApiSession:
         try:
             async with self._http_session.post(self._token_url, data=data) as response:
                 token_data = await self._async_get_token_data(response)
-        except ClientError as exc:
+        except JSONDecodeError as exc:
+            raise ApiError("Invalid JSON in token response") from exc
+        except (ClientError, asyncio.TimeoutError) as exc:
             raise ApiConnectError(
                 f"Error connecting to {self._token_url}: {exc}"
             ) from exc
 
-        self.access_token = token_data["access_token"]
-        self.refresh_token = token_data.get("refresh_token")
-        expires_in = token_data.get("expires_in", 3600)
-        self.expires_at = time.time() + expires_in
+        access_token, expires_at = self._parse_token_data(token_data, 3600)
+        refresh_token = token_data.get("refresh_token", self.refresh_token)
+        if not isinstance(refresh_token, str) or not refresh_token:
+            raise ApiError("Invalid refresh token in token response")
+
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+        self.expires_at = expires_at
 
     async def _ensure_valid_token(self) -> None:
         """Refresh if our token is expired (simple check)."""
         if time.time() >= self.expires_at:
-            await self.refresh_openid()
+            if self._refresh_lock is None:
+                self._refresh_lock = asyncio.Lock()
+            async with self._refresh_lock:
+                if time.time() >= self.expires_at:
+                    await self.refresh_openid()
 
     async def _read(
         self,
@@ -240,11 +283,12 @@ class ApiSession:
 
         return ApiResult(status, data, parameters)
 
-    async def _post(self, endpoint: str, payload: dict | None = None) -> dict:
+    async def _post(self, endpoint: str, payload: dict | None = None) -> ApiResult:
         """Make an authenticated API request"""
         await self._ensure_valid_token()
+        access_token = self.access_token
         headers = {
-            "Authorization": f"Bearer {self.access_token}",
+            "Authorization": f"Bearer {access_token}",
         }
 
         url = f"{self._api_base}{endpoint.lstrip('/')}"
@@ -253,17 +297,19 @@ class ApiSession:
             async with self._http_session.post(
                 url, data=payload or {}, headers=headers
             ) as resp:
+                if resp.status == 401:
+                    if self.access_token == access_token:
+                        self.expires_at = 0.0
+                    raise ApiAccessTokenError("Access token rejected.")
                 resp.raise_for_status()
                 json_data = await resp.json()
-        except ClientError as exc:
-            _LOGGER.exception("API request failed: %s", exc)
+        except JSONDecodeError as exc:
+            raise ApiError("Invalid JSON in API response") from exc
+        except (ClientError, asyncio.TimeoutError) as exc:
+            _LOGGER.debug("API request failed: %s", exc)
             raise ApiConnectError(f"API request failed: {exc}") from exc
 
-        try:
-            result = self._parse_api_json(json_data)
-            _LOGGER.debug("%s called and parsed successfully", endpoint)
-        except Exception as ex:
-            _LOGGER.exception("Could not parse JSON result from API request")
-            result = None
+        result = self._parse_api_json(json_data)
+        _LOGGER.debug("%s called and parsed successfully", endpoint)
 
         return result

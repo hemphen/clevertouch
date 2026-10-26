@@ -201,8 +201,20 @@ class Radiator(Device):
 
         await self._session.write_query(self.home.home_id, query_params)
 
-        # Debatable - see set_temperature
-        self.heat_mode = heat_mode
+        self._update_heat_mode(heat_mode)
+
+    def _update_heat_mode(self, heat_mode: str) -> None:
+        """Assume the outgoing Program submode until the next refresh."""
+        mode_info = self._DEVICE_TO_MODE_TYPE[self._HEAT_MODE_TO_DEVICE[heat_mode]]
+        self.heat_mode = mode_info.heat_mode
+        self.temp_type = mode_info.temp_type
+        self.temperatures[TempType.TARGET] = Temperature(
+            None
+            if self.temp_type == TempType.NONE
+            else self.temperatures[self.temp_type].device,
+            is_writable=False,
+            name=TempType.TARGET,
+        )
 
     async def set_boost_time(self, boost_time: int) -> None:
         """Set default boost time for subsequent activations of boost mode"""
@@ -233,7 +245,7 @@ class Radiator(Device):
         temp_value : float, optional
             Temperature value. Must be used together with `temp_unit`.
         temp_unit : str, optional
-            Unit of `temp_value`. Should be `celsius`, `farenheit` or `device`.
+            Unit of `temp_value`. Should be `celsius`, `fahrenheit` or `device`.
         boost_time : int, optional
             Length of period that boost mode should be active, in seconds.
             Applicable to `HeatMode.Boost` only.
@@ -245,11 +257,14 @@ class Radiator(Device):
 
         if heat_mode not in self._HEAT_MODE_TO_DEVICE:
             raise ApiError(f"Heating mode {heat_mode} not available.")
-        if temp_value and not temp_unit:
+        if temp_value is not None and not temp_unit:
             raise ApiError("Unit must be set when a temp value is provided.")
-        if temp_value and heat_mode not in self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE:
+        if (
+            temp_value is not None
+            and heat_mode not in self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE
+        ):
             raise ApiError(f"Temperature can not be set for {heat_mode}.")
-        if boost_time and heat_mode != HeatMode.BOOST:
+        if boost_time is not None and heat_mode != HeatMode.BOOST:
             raise ApiError("Boost time can only be set for boost mode.")
 
         query_params = {}
@@ -257,23 +272,28 @@ class Radiator(Device):
         query_params["gv_mode"] = self._HEAT_MODE_TO_DEVICE[heat_mode]
         query_params["nv_mode"] = self._HEAT_MODE_TO_DEVICE[heat_mode]
 
-        if temp_value and temp_unit:
+        if temp_value is not None and temp_unit:
             temp_type = self._HEAT_MODE_TO_WRITABLE_TEMP_TYPE[heat_mode]
             new_temp = Temperature(
                 temp_value, temp_unit, is_writable=True, name=temp_type
             )
             query_params[self._TEMP_TYPE_TO_DEVICE[temp_type]] = new_temp.device
+
+        if boost_time is not None:
+            query_params["time_boost"] = boost_time
+
+        await self._session.write_query(self.home.home_id, query_params)
+
+        if temp_value is not None and temp_unit:
             # Debatable - see set_temperature
             self.temperatures[temp_type] = new_temp
-            self.temperatures[TempType.TARGET] = new_temp
 
-        if boost_time:
-            query_params["time_boost"] = boost_time
+        self._update_heat_mode(heat_mode)
+
+        if boost_time is not None:
             # Debatable - see set_temperature
             self.boost_time = boost_time
             self.boost_remaining = boost_time
-
-        await self._session.write_query(self.home.home_id, query_params)
 
 
 class TempUnit(StrEnum):
@@ -281,7 +301,7 @@ class TempUnit(StrEnum):
 
     DEVICE = "device"
     CELSIUS = "celsius"
-    FARENHEIT = "farenheit"
+    FAHRENHEIT = "fahrenheit"
 
 
 class Temperature:
@@ -298,15 +318,18 @@ class Temperature:
         self.name: Optional[str] = name
         self.is_writable: bool = is_writable
 
+        if unit not in (TempUnit.CELSIUS, TempUnit.FAHRENHEIT, TempUnit.DEVICE):
+            raise KeyError(f"Unknown unit: {unit}")
+
         if temperature is None:
             self.device: Optional[float] = None
             self.celsius: Optional[float] = None
-            self.farenheit: Optional[float] = None
+            self.fahrenheit: Optional[float] = None
             return None
 
         if unit == TempUnit.CELSIUS:
             device_temperature = round(18 * temperature + 320)
-        elif unit == TempUnit.FARENHEIT:
+        elif unit == TempUnit.FAHRENHEIT:
             device_temperature = round(10 * temperature)
         elif unit == TempUnit.DEVICE:
             device_temperature = round(temperature)
@@ -315,14 +338,14 @@ class Temperature:
 
         self.device = device_temperature
         self.celsius = (device_temperature - 320) / 18
-        self.farenheit = device_temperature / 10
+        self.fahrenheit = device_temperature / 10
 
     def as_unit(self, unit: str) -> Optional[float]:
         """Return the temperature expressed as the specified unit."""
         if unit == TempUnit.CELSIUS:
             return self.celsius
-        if unit == TempUnit.FARENHEIT:
-            return self.farenheit
+        if unit == TempUnit.FAHRENHEIT:
+            return self.fahrenheit
         if unit == TempUnit.DEVICE:
             return self.device
         raise ApiError(f"Unknown temperature unit '{unit}'")
