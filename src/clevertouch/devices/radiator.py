@@ -245,7 +245,7 @@ class Radiator(Device):
         temp_value : float, optional
             Temperature value. Must be used together with `temp_unit`.
         temp_unit : str, optional
-            Unit of `temp_value`. Should be `celsius`, `farenheit` or `device`.
+            Unit of `temp_value`. Should be `celsius`, `fahrenheit` or `device`.
         boost_time : int, optional
             Length of period that boost mode should be active, in seconds.
             Applicable to `HeatMode.Boost` only.
@@ -301,7 +301,13 @@ class TempUnit(StrEnum):
 
     DEVICE = "device"
     CELSIUS = "celsius"
-    FARENHEIT = "farenheit"
+    FAHRENHEIT = "fahrenheit"
+    FARENHEIT = "fahrenheit"  # deprecated misspelled alias
+
+
+def _normalize_unit(unit: str) -> str:
+    """Accept the deprecated 'farenheit' spelling."""
+    return TempUnit.FAHRENHEIT if unit == "farenheit" else unit
 
 
 class Temperature:
@@ -321,12 +327,13 @@ class Temperature:
         if temperature is None:
             self.device: Optional[float] = None
             self.celsius: Optional[float] = None
-            self.farenheit: Optional[float] = None
+            self.fahrenheit: Optional[float] = None
             return None
 
+        unit = _normalize_unit(unit)
         if unit == TempUnit.CELSIUS:
             device_temperature = round(18 * temperature + 320)
-        elif unit == TempUnit.FARENHEIT:
+        elif unit == TempUnit.FAHRENHEIT:
             device_temperature = round(10 * temperature)
         elif unit == TempUnit.DEVICE:
             device_temperature = round(temperature)
@@ -335,17 +342,23 @@ class Temperature:
 
         self.device = device_temperature
         self.celsius = (device_temperature - 320) / 18
-        self.farenheit = device_temperature / 10
+        self.fahrenheit = device_temperature / 10
 
     def as_unit(self, unit: str) -> Optional[float]:
         """Return the temperature expressed as the specified unit."""
+        unit = _normalize_unit(unit)
         if unit == TempUnit.CELSIUS:
             return self.celsius
-        if unit == TempUnit.FARENHEIT:
-            return self.farenheit
+        if unit == TempUnit.FAHRENHEIT:
+            return self.fahrenheit
         if unit == TempUnit.DEVICE:
             return self.device
         raise ApiError(f"Unknown temperature unit '{unit}'")
+
+    @property
+    def farenheit(self) -> Optional[float]:
+        """Deprecated misspelled alias of `fahrenheit`."""
+        return self.fahrenheit
 
     @classmethod
     def convert(
