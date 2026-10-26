@@ -302,12 +302,6 @@ class TempUnit(StrEnum):
     DEVICE = "device"
     CELSIUS = "celsius"
     FAHRENHEIT = "fahrenheit"
-    FARENHEIT = "fahrenheit"  # deprecated misspelled alias
-
-
-def _normalize_unit(unit: str) -> str:
-    """Accept the deprecated 'farenheit' spelling."""
-    return TempUnit.FAHRENHEIT if unit == "farenheit" else unit
 
 
 class Temperature:
@@ -324,13 +318,15 @@ class Temperature:
         self.name: Optional[str] = name
         self.is_writable: bool = is_writable
 
+        if unit not in (TempUnit.CELSIUS, TempUnit.FAHRENHEIT, TempUnit.DEVICE):
+            raise KeyError(f"Unknown unit: {unit}")
+
         if temperature is None:
             self.device: Optional[float] = None
             self.celsius: Optional[float] = None
             self.fahrenheit: Optional[float] = None
             return None
 
-        unit = _normalize_unit(unit)
         if unit == TempUnit.CELSIUS:
             device_temperature = round(18 * temperature + 320)
         elif unit == TempUnit.FAHRENHEIT:
@@ -346,7 +342,6 @@ class Temperature:
 
     def as_unit(self, unit: str) -> Optional[float]:
         """Return the temperature expressed as the specified unit."""
-        unit = _normalize_unit(unit)
         if unit == TempUnit.CELSIUS:
             return self.celsius
         if unit == TempUnit.FAHRENHEIT:
@@ -354,11 +349,6 @@ class Temperature:
         if unit == TempUnit.DEVICE:
             return self.device
         raise ApiError(f"Unknown temperature unit '{unit}'")
-
-    @property
-    def farenheit(self) -> Optional[float]:
-        """Deprecated misspelled alias of `fahrenheit`."""
-        return self.fahrenheit
 
     @classmethod
     def convert(

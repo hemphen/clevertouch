@@ -274,12 +274,25 @@ async def test_activation_zero_validation(
     assert vars(radiator) == before
 
 
-@pytest.mark.parametrize("unit", ["fahrenheit", "farenheit", TempUnit.FARENHEIT])
+@pytest.mark.parametrize("unit", ["fahrenheit", TempUnit.FAHRENHEIT])
 def test_fahrenheit_spelling(unit: str) -> None:
-    """Accept the deprecated spelling alongside the correct one."""
+    """Use the correctly spelled Fahrenheit API."""
     temp = Temperature(68, unit)
     assert temp.device == 680
     assert temp.fahrenheit == 68
-    assert temp.farenheit == 68
     assert temp.as_unit(unit) == 68
-    assert TempUnit.FAHRENHEIT == "fahrenheit"
+    assert not hasattr(TempUnit, "FARENHEIT")
+    assert not hasattr(temp, "farenheit")
+
+
+@pytest.mark.parametrize("value", [68, None])
+def test_obsolete_fahrenheit_spelling_is_rejected(value) -> None:
+    """Reject the old spelling even when the temperature is unknown."""
+    with pytest.raises(KeyError, match="Unknown unit"):
+        Temperature(value, "farenheit")
+    with pytest.raises(ApiError, match="Unknown temperature unit"):
+        Temperature(value).as_unit("farenheit")
+    with pytest.raises(KeyError, match="Unknown unit"):
+        Temperature.convert(value, "farenheit", "celsius")
+    with pytest.raises(ApiError, match="Unknown temperature unit"):
+        Temperature.convert(value, "celsius", "farenheit")
