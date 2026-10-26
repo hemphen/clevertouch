@@ -8,7 +8,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from clevertouch.api import ApiSession
-from clevertouch.devices.radiator import HeatMode, Radiator, TempType, TempUnit
+from clevertouch.devices.radiator import (
+    HeatMode,
+    Radiator,
+    Temperature,
+    TempType,
+    TempUnit,
+)
 from clevertouch.info import HomeInfo
 from clevertouch.util import ApiError
 
@@ -266,3 +272,14 @@ async def test_activation_zero_validation(
     assert str(error.value) == message
     radiator._session.write_query.assert_not_awaited()
     assert vars(radiator) == before
+
+
+@pytest.mark.parametrize("unit", ["fahrenheit", "farenheit", TempUnit.FARENHEIT])
+def test_fahrenheit_spelling(unit: str) -> None:
+    """Accept the deprecated spelling alongside the correct one."""
+    temp = Temperature(68, unit)
+    assert temp.device == 680
+    assert temp.fahrenheit == 68
+    assert temp.farenheit == 68
+    assert temp.as_unit(unit) == 68
+    assert TempUnit.FAHRENHEIT == "fahrenheit"
