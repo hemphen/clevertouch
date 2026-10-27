@@ -145,12 +145,12 @@ class Radiator(Device):
             is_writable=False,
             name=TempType.TARGET,
         )
-        # Read boost settings
-        # 'time_boost' is the boost duration in seconds. While a boost timer
-        # runs, signalled by 'date_start_boost', it holds the remaining time.
-        # Like the official app, ignore 'time_boost_format_chrono'.
+        # 'time_boost' is the configured boost duration in seconds. While
+        # boost mode is active the cloud counts it down, so it then holds the
+        # remaining time. 'date_start_boost' and 'time_boost_format_chrono'
+        # are not populated.
         self.boost_time = int(data.get("time_boost") or 0)
-        if data.get("date_start_boost") not in (None, "", "null"):
+        if self.heat_mode == HeatMode.BOOST:
             self.boost_remaining = self.boost_time
         else:
             self.boost_remaining = None

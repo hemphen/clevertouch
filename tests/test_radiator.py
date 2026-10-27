@@ -46,7 +46,6 @@ def radiator() -> Radiator:
             "consigne_confort": "698",
             "temperature_air": "680",
             "consigne_boost": "752",
-            "date_start_boost": None,
             "time_boost": "300",
             "time_boost_format_chrono": {"d": "00", "h": "00", "m": "00", "s": "00"},
         },
@@ -67,53 +66,42 @@ def _radiator_data(radiator: Radiator, **fields) -> dict:
         "consigne_confort": "698",
         "temperature_air": "680",
         "consigne_boost": "752",
-        "time_boost_format_chrono": {"d": "00", "h": "00", "m": "00", "s": "00"},
+        "time_boost": "300",
+        "date_start_boost": None,
+        "time_boost_format_chrono": None,
         **fields,
     }
 
 
 @pytest.mark.parametrize(
-    ("date_start_boost", "time_boost", "boost_remaining"),
+    ("gv_mode", "time_boost", "boost_remaining"),
     [
-        pytest.param("2026-10-27 10:00:00", "5400", 5400, id="running"),
-        pytest.param("0000-00-00 00:00:00", "90", 90, id="running-placeholder"),
-        pytest.param(None, "7200", None, id="idle"),
-        pytest.param("null", "7200", None, id="idle-null-string"),
-        pytest.param("", "7200", None, id="idle-empty"),
+        pytest.param("4", "2460", 2460, id="boost-running"),
+        pytest.param("4", "0", 0, id="boost-zero"),
+        pytest.param("3", "7200", None, id="idle-other-mode"),
+        pytest.param("0", "86340", None, id="idle-comfort"),
     ],
 )
 def test_boost_remaining(
     radiator: Radiator,
-    date_start_boost: str | None,
+    gv_mode: str,
     time_boost: str,
     boost_remaining: int | None,
 ) -> None:
-    """Report the counted down boost time only while a boost timer runs."""
-    radiator.update(
-        _radiator_data(
-            radiator, date_start_boost=date_start_boost, time_boost=time_boost
-        )
-    )
+    """Report the counted down boost time only while in boost mode."""
+    radiator.update(_radiator_data(radiator, gv_mode=gv_mode, time_boost=time_boost))
 
     assert radiator.boost_time == int(time_boost)
     assert radiator.boost_remaining == boost_remaining
 
 
 def test_boost_remaining_follows_refreshes(radiator: Radiator) -> None:
-    """Refreshes count the boost down and clear it once the timer ends."""
+    """Refreshes count the boost down and clear it once boost mode ends."""
     for time_boost in ("3600", "3540"):
-        radiator.update(
-            _radiator_data(
-                radiator,
-                date_start_boost="2026-10-27 10:00:00",
-                time_boost=time_boost,
-            )
-        )
+        radiator.update(_radiator_data(radiator, time_boost=time_boost))
         assert radiator.boost_remaining == int(time_boost)
 
-    radiator.update(
-        _radiator_data(radiator, gv_mode="0", date_start_boost=None, time_boost="0")
-    )
+    radiator.update(_radiator_data(radiator, gv_mode="0", time_boost="0"))
     assert radiator.boost_remaining is None
 
 
