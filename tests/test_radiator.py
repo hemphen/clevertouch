@@ -46,10 +46,75 @@ def radiator() -> Radiator:
             "consigne_confort": "698",
             "temperature_air": "680",
             "consigne_boost": "752",
+            "date_start_boost": None,
             "time_boost": "300",
-            "time_boost_format_chrono": {"m": "2", "s": "30"},
+            "time_boost_format_chrono": {"d": "00", "h": "00", "m": "00", "s": "00"},
         },
     )
+
+
+def _radiator_data(radiator: Radiator, **fields) -> dict:
+    """Return cloud API data for the radiator fixture with fields replaced."""
+    return {
+        "id": radiator.device_id,
+        "id_device": radiator.id_local,
+        "label_interface": radiator.label,
+        "num_zone": radiator.zone.id_local,
+        "gv_mode": "4",
+        "heating_up": "1",
+        "consigne_eco": "590",
+        "consigne_hg": "446",
+        "consigne_confort": "698",
+        "temperature_air": "680",
+        "consigne_boost": "752",
+        "time_boost_format_chrono": {"d": "00", "h": "00", "m": "00", "s": "00"},
+        **fields,
+    }
+
+
+@pytest.mark.parametrize(
+    ("date_start_boost", "time_boost", "boost_remaining"),
+    [
+        pytest.param("2026-10-27 10:00:00", "5400", 5400, id="running"),
+        pytest.param("0000-00-00 00:00:00", "90", 90, id="running-placeholder"),
+        pytest.param(None, "7200", None, id="idle"),
+        pytest.param("null", "7200", None, id="idle-null-string"),
+        pytest.param("", "7200", None, id="idle-empty"),
+    ],
+)
+def test_boost_remaining(
+    radiator: Radiator,
+    date_start_boost: str | None,
+    time_boost: str,
+    boost_remaining: int | None,
+) -> None:
+    """Report the counted down boost time only while a boost timer runs."""
+    radiator.update(
+        _radiator_data(
+            radiator, date_start_boost=date_start_boost, time_boost=time_boost
+        )
+    )
+
+    assert radiator.boost_time == int(time_boost)
+    assert radiator.boost_remaining == boost_remaining
+
+
+def test_boost_remaining_follows_refreshes(radiator: Radiator) -> None:
+    """Refreshes count the boost down and clear it once the timer ends."""
+    for time_boost in ("3600", "3540"):
+        radiator.update(
+            _radiator_data(
+                radiator,
+                date_start_boost="2026-10-27 10:00:00",
+                time_boost=time_boost,
+            )
+        )
+        assert radiator.boost_remaining == int(time_boost)
+
+    radiator.update(
+        _radiator_data(radiator, gv_mode="0", date_start_boost=None, time_boost="0")
+    )
+    assert radiator.boost_remaining is None
 
 
 @pytest.mark.asyncio
@@ -93,7 +158,7 @@ async def test_activation_cancellation_preserves_state(radiator: Radiator) -> No
 
     assert radiator.temperatures == temperatures
     assert radiator.boost_time == 300
-    assert radiator.boost_remaining == 150
+    assert radiator.boost_remaining is None
     assert radiator.heat_mode == HeatMode.COMFORT
     assert radiator.temp_type == TempType.COMFORT
     assert radiator.active is True
@@ -195,13 +260,13 @@ async def test_mode_change_failure(
 @pytest.mark.parametrize(
     ("arguments", "extra_payload", "target", "boost_time", "boost_remaining"),
     [
-        pytest.param({}, {}, 24, 300, 150, id="omitted"),
+        pytest.param({}, {}, 24, 300, None, id="omitted"),
         pytest.param(
             {"temp_value": 0, "temp_unit": TempUnit.CELSIUS},
             {"consigne_boost": 320},
             0,
             300,
-            150,
+            None,
             id="zero-temperature",
         ),
         pytest.param(
@@ -220,7 +285,7 @@ async def test_activation_optional_arguments(
     extra_payload: dict,
     target: float,
     boost_time: int,
-    boost_remaining: int,
+    boost_remaining: int | None,
 ) -> None:
     """Distinguish omitted arguments from supplied zero values."""
     await radiator.activate_mode(HeatMode.BOOST, **arguments)

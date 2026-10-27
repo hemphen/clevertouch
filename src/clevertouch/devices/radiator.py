@@ -118,7 +118,7 @@ class Radiator(Device):
         self.heat_mode = HeatMode.OFF
         self.temp_type = TempType.NONE
         self.boost_time: int = 0
-        self.boost_remaining: int = 0
+        self.boost_remaining: Optional[int] = None
         self.temperatures: dict[str, Temperature] = {}
         self.update(data)
 
@@ -146,17 +146,12 @@ class Radiator(Device):
             name=TempType.TARGET,
         )
         # Read boost settings
-        # 'boost_time' is the user writable boost time
+        # 'time_boost' is the boost duration in seconds. While a boost timer
+        # runs, signalled by 'date_start_boost', it holds the remaining time.
+        # Like the official app, ignore 'time_boost_format_chrono'.
         self.boost_time = int(data.get("time_boost") or 0)
-        # 'time_boost_format_chrono' holds remaining boost time with higher resolution
-        node = data.get("time_boost_format_chrono")
-        if node:
-            self.boost_remaining = (
-                int(node.get("d") or 0) * 24 * 60 * 60
-                + int(node.get("h") or 0) * 60 * 60
-                + int(node.get("m") or 0) * 60
-                + int(node.get("s") or 0)
-            )
+        if data.get("date_start_boost") not in (None, "", "null"):
+            self.boost_remaining = self.boost_time
         else:
             self.boost_remaining = None
 
